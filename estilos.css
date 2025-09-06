@@ -89,10 +89,9 @@ ul li button:hover { color: #a71d2a; }
   justify-content: center;
   font-weight: 700;
   font-size: clamp(.85rem, 2.8vw, 1rem);
-  color: #fff;
+  color: #111;
   pointer-events: none;
   white-space: nowrap;
-  text-shadow: 0 1px 0 rgba(0,0,0,.2);
 }
 
 /* Relleno */
