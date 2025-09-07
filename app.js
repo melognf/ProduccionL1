@@ -1,15 +1,21 @@
-// app.js — Un doc por día+sabor+formato. Objetivo GLOBAL. Listado con TODOS los parciales.
+// app.js — Un doc por día+sabor+formato. Objetivo GLOBAL. Parciales por turno (suman global).
+// + Cumplimiento (cajas) editable en la línea de contexto y barra de % dentro del recuadro.
 // Requiere firebase-config.js con export { app, db }.
+
 import { app, db } from "./firebase-config.js";
-import { doc, setDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  doc, setDoc, updateDoc, onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getAuth, signInAnonymously, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 /* ===== Estado ===== */
-let objetivo = 0;
+let objetivo = 0;                // botellas (global Sabor+Formato+Hoy)
 let inicioProduccion = null;
 let unsubscribe = null;
 let authed = false;
-let lastSnap = { parciales: {} };
+let lastSnap = { parciales: {}, cumplimientoObjetivo: 0 };
 
 /* ===== Refs DOM ===== */
 const objetivoLabel      = document.querySelector('label[for="objetivo"]');
@@ -31,6 +37,7 @@ const resetBtn           = document.getElementById('resetBtn');
 const saborSelect        = document.getElementById('sabor');
 const formatoSelect      = document.getElementById('formato');
 const turnoSelect        = document.getElementById('turno');
+
 const contexto           = document.getElementById('contexto');
 const ctxSabor           = document.getElementById('ctxSabor');
 const ctxFormato         = document.getElementById('ctxFormato');
@@ -55,11 +62,13 @@ function getDocId() {
   const formatoTxt = safeIdPart(getSelectedText(formatoSelect));
   return `${fecha}__${saborTxt}_${formatoTxt}`; // SIN turno
 }
+// "A|B|C|D" desde "Turno A"
 function turnoKey() {
-  const t = getSelectedText(turnoSelect); // "Turno A"
+  const t = getSelectedText(turnoSelect);
   const m = t.match(/([ABCD])$/i);
   return m ? m[1].toUpperCase() : safeIdPart(t);
 }
+
 function getCantidad(p){ return typeof p==='number' ? p : (parseInt(p?.cantidad) || 0); }
 function sumParciales(arr){ return arr.reduce((acc,p)=>acc+getCantidad(p),0); }
 function sumAllTurnos(parcialesByTurno = {}) {
@@ -94,21 +103,102 @@ function mostrarControlesProduccion(mostrar){
   agregarParcialBtn.style.display = mostrar ? 'block' : 'none';
   parcialLabel.style.display = mostrar ? 'block' : 'none';
 }
+
+/* ===== Cumplimiento (cajas) ===== */
+// tamaño de pack según formato: solo 1500 => 4; el resto => 6
+function packSize(){
+  const f = (getSelectedText(formatoSelect) || '').toLowerCase();
+  return f.includes('1500') ? 4 : 6;
+}
+
+// crea (una vez) el campo de cumplimiento en la línea de contexto
+function ensureCumplInputUI(){
+  if (!contexto) return;
+  let chip = document.getElementById('chipCumpl');
+  if (!chip) {
+    chip = document.createElement('span');
+    chip.id = 'chipCumpl';
+    chip.className = 'chip';
+    chip.style.display = 'flex';
+    chip.style.alignItems = 'center';
+    chip.style.gap = '6px';
+    chip.innerHTML = `
+      <span>Cumpl. (cajas)</span>
+      <input type="number" id="cumplInput" min="0" style="width:90px; padding:.25rem .4rem; border:1px solid #e5e7eb; border-radius:8px;" />
+      <button id="guardarCumplBtn" style="padding:.35rem .6rem; border-radius:8px; background:#007BFF; color:#fff; border:none; cursor:pointer;">Guardar</button>
+    `;
+    contexto.appendChild(chip);
+    const btn = document.getElementById('guardarCumplBtn');
+    const inp = document.getElementById('cumplInput');
+    btn.addEventListener('click', guardarCumplHandler);
+    inp.addEventListener('keydown', (e)=> { if (e.key === 'Enter') guardarCumplHandler(); });
+  }
+  const inp = document.getElementById('cumplInput');
+  if (inp) inp.value = lastSnap.cumplimientoObjetivo ? String(lastSnap.cumplimientoObjetivo) : '';
+}
+
+// crea (una vez) la barra de cumplimiento dentro del recuadro de parciales
+function ensureCumplBar(){
+  if (document.getElementById('barraCumpl')) return;
+
+  const barraPrincipal = document.getElementById('barraProgreso'); // ya existe en HTML
+  if (!barraPrincipal) return;
+  const mainWrap = barraPrincipal.parentElement;
+
+  // Título
+  const titulo = document.createElement('div');
+  titulo.id = 'tituloCumpl';
+  titulo.textContent = 'CUMPLIMIENTO TURNO —';
+  titulo.style.marginTop = '10px';
+  titulo.style.fontWeight = '700';
+
+  // Barra
+  const wrap = document.createElement('div');
+  wrap.className = 'barra-externa';
+  wrap.id = 'barraCumplWrap';
+  const inner = document.createElement('div');
+  inner.className = 'barra-interna';
+  inner.id = 'barraCumpl';
+  wrap.appendChild(inner);
+
+  // Insertar ANTES de la barra principal
+  resumenDiv.insertBefore(titulo, mainWrap);
+  resumenDiv.insertBefore(wrap, mainWrap);
+}
+
+async function guardarCumplHandler(){
+  if (!authed) { alert('No hay sesión. Activá Anonymous en Firebase Authentication.'); return; }
+  const inp = document.getElementById('cumplInput');
+  const val = parseInt(String(inp?.value || '').replace(/\D/g,'')) || 0;
+  const ref = refActual();
+  try {
+    await setDoc(ref, { cumplimientoObjetivo: val }, { merge: true });
+  } catch (e) {
+    console.error(e);
+    alert(`No se pudo guardar el cumplimiento (cajas).\n${e.code||''} ${e.message||''}`);
+  }
+}
+
+/* ===== Contexto ===== */
 function renderContexto(){
   if (!contexto || !ctxSabor || !ctxFormato) return;
   if (objetivo > 0){
     ctxSabor.textContent   = `Sabor: ${getSelectedText(saborSelect)}`;
     ctxFormato.textContent = `Formato: ${getSelectedText(formatoSelect)}`;
     contexto.style.display = 'flex';
+    ensureCumplInputUI(); // input de cumplimiento en la misma línea
   } else {
     contexto.style.display = 'none';
   }
 }
+
 function refActual(){ return doc(db, "produccion", getDocId()); }
 function setBotonesEnabled(enabled){
   guardarObjetivoBtn.disabled = !enabled;
   agregarParcialBtn.disabled  = !enabled;
   resetBtn.disabled           = !enabled;
+  const btn = document.getElementById('guardarCumplBtn');
+  if (btn) btn.disabled = !enabled;
 }
 
 /* ===== Auth ===== */
@@ -137,7 +227,11 @@ function escucharDocumentoActual(){
   const ref = refActual();
   unsubscribe = onSnapshot(ref, (snap)=>{
     const data = snap.data() || {};
-    lastSnap = { ...data, parciales: data.parciales || {} };
+    lastSnap = {
+      ...data,
+      parciales: data.parciales || {},
+      cumplimientoObjetivo: Number(data.cumplimientoObjetivo || 0)
+    };
 
     objetivo = Number(lastSnap.objetivo || 0);
     inicioProduccion = lastSnap.inicio || null;
@@ -156,72 +250,128 @@ function escucharDocumentoActual(){
   });
 }
 
-/* ===== Render (GLOBAL) + Listado de TODOS los parciales ===== */
+/* ===== Helper: título arriba de la barra de producción ===== */
+function ensureProdTitle(){
+  const barraPrincipal = document.getElementById('barraProgreso');
+  if (!barraPrincipal || !resumenDiv) return;
+
+  const mainWrap = barraPrincipal.parentElement;
+  if (!mainWrap) return;
+
+  if (!document.getElementById('tituloProgresoProd')) {
+    const t = document.createElement('div');
+    t.id = 'tituloProgresoProd';
+    t.textContent = 'Progreso de producción';
+    t.style.marginTop = '10px';
+    t.style.fontWeight = '700';
+    resumenDiv.insertBefore(t, mainWrap);
+  }
+}
+
+/* ===== Render producción + lista + cumplimiento (último parcial) ===== */
 function actualizarResumen(){
   const totalGlobal  = sumAllTurnos(lastSnap.parciales || {});
   const restanteGlob = Math.max((objetivo || 0) - totalGlobal, 0);
 
-  objetivoMostrar.textContent = objetivo.toLocaleString('es-AR');
-  acumuladoSpan.textContent   = totalGlobal.toLocaleString('es-AR');
-  faltanteSpan.textContent    = restanteGlob.toLocaleString('es-AR');
-  inicioSpan.textContent      = inicioProduccion ? fmtFechaHora(inicioProduccion) : '—';
+  if (objetivoMostrar) objetivoMostrar.textContent = (objetivo || 0).toLocaleString('es-AR');
+  if (acumuladoSpan)   acumuladoSpan.textContent   = totalGlobal.toLocaleString('es-AR');
+  if (faltanteSpan)    faltanteSpan.textContent    = restanteGlob.toLocaleString('es-AR');
+  if (inicioSpan)      inicioSpan.textContent      = inicioProduccion ? fmtFechaHora(inicioProduccion) : '—';
 
-  // ---- LISTA: TODOS LOS PARCIALES (A+B+C+D), ordenados por fecha desc ----
+  // ---- Lista: TODOS los parciales ordenados desc por fecha ----
   const items = [];
   for (const [k, arr] of Object.entries(lastSnap.parciales || {})) {
-    (Array.isArray(arr) ? arr : []).forEach((p, i) => {
-      items.push({ k, i, p });
-    });
+    (Array.isArray(arr) ? arr : []).forEach((p, i) => items.push({ k, i, p }));
   }
   items.sort((a,b)=> (b.p?.ts||0) - (a.p?.ts||0)); // más recientes primero
 
-  listaParciales.innerHTML = '';
-  items.forEach(({k, i, p}, idxGlobal) => {
-    const cantidad = getCantidad(p);
-    const turnoTxt = `Turno ${k}`;
-    const fechaTxt = p?.ts ? fmtFechaHora(p.ts) : '—';
-    const li = document.createElement('li');
-    li.innerHTML = `
-      <span>
-        #${idxGlobal + 1} — ${cantidad.toLocaleString('es-AR')} botellas
-        — ${turnoTxt}
-        — ${fechaTxt}
-      </span>
-      <button onclick="eliminarParcial('${k}', ${i})" title="Eliminar parcial">❌</button>
-    `;
-    listaParciales.appendChild(li);
-  });
+  if (listaParciales) {
+    listaParciales.innerHTML = '';
+    items.forEach(({k, i, p}, idxGlobal) => {
+      const cantidad = getCantidad(p);
+      const turnoTxt = `Turno ${k}`;
+      const fechaTxt = p?.ts ? fmtFechaHora(p.ts) : '—';
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <span>
+          #${idxGlobal + 1} — ${cantidad.toLocaleString('es-AR')} botellas
+          — ${turnoTxt}
+          — ${fechaTxt}
+        </span>
+        <button onclick="eliminarParcial('${k}', ${i})" title="Eliminar parcial">❌</button>
+      `;
+      listaParciales.appendChild(li);
+    });
+  }
 
-  // Visibilidad bloque resumen
-  resumenDiv.style.display = objetivo > 0 ? 'block' : 'none';
+  // Visibilidad del bloque resumen
+  if (resumenDiv) resumenDiv.style.display = (objetivo > 0) ? 'block' : 'none';
 
   // Habilitar/deshabilitar carga de parciales según restante GLOBAL
-  agregarParcialBtn.disabled = !authed || (restanteGlob <= 0);
-  parcialInput.disabled      = (restanteGlob <= 0);
+  if (agregarParcialBtn) agregarParcialBtn.disabled = !authed || (restanteGlob <= 0);
+  if (parcialInput) {
+    parcialInput.disabled   = (restanteGlob <= 0);
+    parcialInput.max        = restanteGlob;
+    parcialInput.placeholder = restanteGlob > 0
+      ? `Máx: ${restanteGlob.toLocaleString('es-AR')} (global)`
+      : 'Sin restante';
+  }
 
-  // ---- Barra de progreso (GLOBAL) — % en el contenedor .barra-externa ----
-  const barraProgreso = document.getElementById('barraProgreso');       // .barra-interna
+  // ===== Cumplimiento (cajas) — SOLO el último parcial (sin decimales) =====
+  ensureCumplBar(); // crea título y barra si no existen
+
+  // Título dinámico con el turno del último parcial (o turno seleccionado si no hay)
+  const tituloCumpl = document.getElementById('tituloCumpl');
+  const ultimo      = items[0];
+  const turnoUltimo = ultimo ? ultimo.k : turnoKey();
+  if (tituloCumpl) tituloCumpl.textContent = `CUMPLIMIENTO TURNO ${turnoUltimo}`;
+
+  const barraCumpl     = document.getElementById('barraCumpl');
+  const barraCumplWrap = barraCumpl ? barraCumpl.parentElement : null;
+
+  const pack            = packSize(); // 1500 => 4; resto => 6
+  const objetivoCajas   = Number(lastSnap.cumplimientoObjetivo || 0);
+  const botellasParcial = ultimo ? getCantidad(ultimo.p) : 0;
+  const cajasParcial    = (pack > 0) ? (botellasParcial / pack) : 0;
+
+  let pctCumpl = (objetivoCajas > 0)
+    ? Math.round((cajasParcial / objetivoCajas) * 100)
+    : 0;
+  pctCumpl = Math.max(0, Math.min(100, pctCumpl)); // clamp 0..100
+
+  if (barraCumpl) {
+    barraCumpl.textContent = ''; // sin texto interno
+    barraCumpl.style.width = `${pctCumpl}%`;
+    if (barraCumplWrap) {
+      barraCumplWrap.setAttribute('data-label', `${pctCumpl}%`);
+      const cajasParcialInt = Math.round(cajasParcial);
+      barraCumplWrap.title = `Parcial: ${cajasParcialInt.toLocaleString('es-AR')} / ${objetivoCajas.toLocaleString('es-AR')} cajas (pack x${pack})`;
+    }
+    // ✅ Regla pedida: >=58% verde, <58% rojo (sin amarillo)
+    barraCumpl.style.backgroundColor = (pctCumpl >= 58) ? '#28a745' : '#dc3545';
+  }
+
+  // ===== Título + Barra de progreso (botellas GLOBAL) =====
+  ensureProdTitle(); // agrega "Progreso de producción" si falta
+
+  const barraProgreso = document.getElementById('barraProgreso');           // .barra-interna
   const barraWrap     = barraProgreso ? barraProgreso.parentElement : null; // .barra-externa
   let porcentaje = 0;
-  if (objetivo > 0) porcentaje = Math.round((totalGlobal / objetivo) * 100);
-  porcentaje = Math.max(0, Math.min(100, porcentaje)); // clamp 0..100
-
+  if (objetivo > 0) porcentaje = Math.round((totalGlobal / objetivo) * 100); // entero
+  porcentaje = Math.max(0, Math.min(100, porcentaje));
   if (barraProgreso) {
+    barraProgreso.textContent = ''; // evitar "0%" interno
     barraProgreso.style.width = `${porcentaje}%`;
     if (barraWrap) barraWrap.setAttribute('data-label', `${porcentaje}%`);
+    // (La barra global mantiene su esquema rojo/ámbar/verde)
     if (porcentaje < 30)      barraProgreso.style.backgroundColor = '#dc3545';
     else if (porcentaje < 70) barraProgreso.style.backgroundColor = '#ffc107';
     else                      barraProgreso.style.backgroundColor = '#28a745';
   }
-
-  // Placeholder y tope del parcial según restante GLOBAL
-  parcialInput.max = restanteGlob;
-  parcialInput.placeholder = restanteGlob > 0
-    ? `Máx: ${restanteGlob.toLocaleString('es-AR')} (global)`
-    : 'Sin restante';
 }
 
-/* ===== Acciones UI ===== */
+
+/* ===== Acciones UI: Objetivo & Parciales ===== */
 async function guardarObjetivoHandler(){
   if (!authed) { alert('No hay sesión. Activá Anonymous en Firebase Authentication.'); return; }
   const val = parseInt(String(objetivoInput.value).replace(/\D/g, ''));
@@ -235,7 +385,8 @@ async function guardarObjetivoHandler(){
     await setDoc(ref, {
       objetivo,
       inicio: inicioProduccion,
-      parciales: lastSnap.parciales || {}
+      parciales: lastSnap.parciales || {},
+      cumplimientoObjetivo: Number(lastSnap.cumplimientoObjetivo || 0)
     }, { merge: true });
 
     mostrarObjetivoControls(false);
@@ -253,7 +404,6 @@ async function agregarParcialHandler(){
   const val = parseInt(String(parcialInput.value).replace(/\D/g, ''));
   if (!val || val <= 0) { alert('Ingresá un número válido (>0).'); return; }
 
-  // Chequeo contra restante GLOBAL
   const totalGlobal  = sumAllTurnos(lastSnap.parciales || {});
   const restanteGlob = Math.max((objetivo || 0) - totalGlobal, 0);
   if (val > restanteGlob) {
@@ -266,12 +416,10 @@ async function agregarParcialHandler(){
   const nuevos = (lastSnap.parciales?.[k] || []).concat([{ cantidad: val, ts: Date.now() }]);
 
   try {
-    // path específico: no toca otros turnos
     await updateDoc(ref, { [`parciales.${k}`]: nuevos });
     parcialInput.value = '';
-    // onSnapshot refresca todo
+    // onSnapshot refresca todo (incluida la barra de cumplimiento)
   } catch (e) {
-    // si el doc aún no existe, crealo y reintenta
     if (e.code === 'not-found') {
       await setDoc(ref, { parciales: { [k]: nuevos } }, { merge: true });
       parcialInput.value = '';
@@ -299,6 +447,19 @@ window.eliminarParcial = async function(k, index){
   }
 };
 
+/* ===== Listeners ===== */
+function onSelectorChange(){
+  actualizarColorFormato();
+  escucharDocumentoActual(); // mismo doc (sabor+formato)
+  renderContexto();          // reinyecta input de cumplimiento si hace falta
+}
+saborSelect.addEventListener('change', onSelectorChange);
+formatoSelect.addEventListener('change', onSelectorChange);
+turnoSelect.addEventListener('change', onSelectorChange);
+
+guardarObjetivoBtn?.addEventListener('click', guardarObjetivoHandler);
+agregarParcialBtn?.addEventListener('click', agregarParcialHandler);
+
 resetBtn.addEventListener('click', async ()=>{
   if (!authed) return;
   if (!confirm('¿Reiniciar la producción completa de esta combinación (TODOS los turnos)?')) return;
@@ -308,7 +469,7 @@ resetBtn.addEventListener('click', async ()=>{
 
   const ref = refActual();
   try {
-    await setDoc(ref, { objetivo: 0, parciales: {}, inicio: null }, { merge: true });
+    await setDoc(ref, { objetivo: 0, parciales: {}, inicio: null, cumplimientoObjetivo: lastSnap.cumplimientoObjetivo || 0 }, { merge: true });
   } catch (e) {
     console.error(e);
     alert(`No se pudo reiniciar.\n${e.code || ''} ${e.message || ''}`);
@@ -321,20 +482,6 @@ resetBtn.addEventListener('click', async ()=>{
   actualizarResumen();
   renderContexto();
 });
-
-/* ===== Selectores ===== */
-function onSelectorChange(){
-  actualizarColorFormato();
-  escucharDocumentoActual(); // mismo doc (sabor+formato). Listado y totales son globales.
-  renderContexto();
-}
-saborSelect.addEventListener('change', onSelectorChange);
-formatoSelect.addEventListener('change', onSelectorChange);
-turnoSelect.addEventListener('change', onSelectorChange);
-
-/* Eventos de botones */
-guardarObjetivoBtn.addEventListener('click', guardarObjetivoHandler);
-agregarParcialBtn.addEventListener('click', agregarParcialHandler);
 
 /* ===== Init ===== */
 (async function init(){
