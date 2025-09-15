@@ -491,3 +491,24 @@ resetBtn.addEventListener('click', async ()=>{
   await initAuth();
   renderContexto();
 })();
+
+// === DEBUG: mostrar docId y estado actual en pantalla ===
+(function dbg() {
+  const host = document.createElement('div');
+  host.id = 'debugDoc';
+  host.style.cssText = 'position:fixed;left:8px;bottom:8px;background:#111;color:#fff;padding:6px 8px;border-radius:8px;font:12px monospace;z-index:9999;opacity:.85';
+  document.body.appendChild(host);
+
+  function paint() {
+    const id = getDocId();
+    const total = (typeof lastSnap?.parciales === 'object')
+      ? Object.values(lastSnap.parciales).flat().reduce((a,p)=>a+(parseInt(p?.cantidad)||0),0)
+      : 0;
+    host.textContent = `doc: ${id} | obj:${objetivo||0} | prod:${total}`;
+  }
+
+  // repintar ante cambios relevantes
+  ['change','input','click'].forEach(evt => document.addEventListener(evt, paint, true));
+  setInterval(paint, 1000);
+  paint();
+})();
