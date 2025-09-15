@@ -25,8 +25,11 @@ let authed = false;
 let lastSnap = { parciales: {}, cumplimientoObjetivo: 0 };
 let session = 1;
 
-// 👇 NUEVO: evita precargar objetivo previo al cambiar de sabor/formato/turno
+// Evita precargar objetivo previo al cambiar de sabor/formato/turno
 let preferirModoNuevoObjetivo = false;
+// Marca desde cuándo estamos en “modo nuevo” (ms)
+let modoNuevoDesdeMs = 0;
+
 
 /* ===== Refs DOM ===== */
 const objetivoLabel      = document.querySelector('label[for="objetivo"]');
@@ -226,13 +229,22 @@ function escucharDocumentoActual(){
 
       let tieneObjetivo = objetivo > 0;
 
-// Si estamos en “nuevo objetivo” pero llegó un objetivo desde el servidor
-// y el usuario NO escribió nada, adoptamos ese objetivo y salimos del modo.
+// ¿Llegó un cambio del SERVIDOR (no cache, sin pending writes)?
 const vinoDeServidor = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites;
+// ¿El usuario de este equipo no escribió nada aún?
 const inputVacio = !objetivoInput || String(objetivoInput.value).trim() === '';
+// ¿El doc tiene updatedAt? (Timestamp de Firestore)
+const updatedAtMs = (lastSnap?.updatedAt && typeof lastSnap.updatedAt.toMillis === 'function')
+  ? lastSnap.updatedAt.toMillis()
+  : 0;
 
-if (preferirModoNuevoObjetivo && tieneObjetivo && vinoDeServidor && inputVacio) {
-  preferirModoNuevoObjetivo = false;           // 👈 adoptamos el objetivo remoto
+// 👉 Solo adoptamos si el objetivo fue actualizado DESPUÉS de entrar en modo nuevo.
+// Así evitamos “revivir” objetivos viejos.
+const objetivoReciente = updatedAtMs > modoNuevoDesdeMs;
+
+if (preferirModoNuevoObjetivo && tieneObjetivo && vinoDeServidor && inputVacio && objetivoReciente) {
+  // Alguien fijó un objetivo AHORA para este combo → lo adoptamos
+  preferirModoNuevoObjetivo = false;
 }
 
 if (preferirModoNuevoObjetivo) {
@@ -385,8 +397,9 @@ async function agregarParcialHandler(){
 function onSelectorChange(){
   actualizarColorFormato();
 
-  // 👇 NUEVO: al cambiar selector, preparamos "nuevo objetivo"
   preferirModoNuevoObjetivo = true;
+modoNuevoDesdeMs = Date.now();
+
 
   // Cortar listener actual
   if (typeof unsubscribe === 'function') { unsubscribe(); unsubscribe = null; }
@@ -427,8 +440,9 @@ if (resetBtn) resetBtn.addEventListener('click', async ()=>{
       updatedAt: serverTimestamp()
     }, { merge: true });
 
-    // 👇 tras reset, quedamos en "nuevo objetivo"
     preferirModoNuevoObjetivo = true;
+modoNuevoDesdeMs = Date.now();
+
 
     // Reenganchar con datos frescos del servidor
     if (typeof unsubscribe === 'function') { unsubscribe(); unsubscribe = null; }
@@ -451,8 +465,8 @@ if (resetBtn) resetBtn.addEventListener('click', async ()=>{
 /* ===== Init ===== */
 (async function init(){
   actualizarColorFormato();
-  // arrancamos en "modo nuevo objetivo" hasta que el usuario confirme
   preferirModoNuevoObjetivo = true;
+modoNuevoDesdeMs = Date.now();
 
   mostrarObjetivoControls(true);
   setBotonesEnabled(false);
