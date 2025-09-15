@@ -1,120 +1,91 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Control de Producción - Llenadora</title>
-
-  <!-- Favicons -->
-  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="./favicon-16.png">
-
-  <!-- iOS -->
-  <link rel="apple-touch-icon" href="./apple-touch-icon-180.png">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Producción">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-
-  <!-- Color UI -->
-  <meta name="theme-color" content="#1362df">
-
-  <!-- Manifest -->
-  <link rel="manifest" href="./manifest.webmanifest" type="application/manifest+json">
-
   <link rel="stylesheet" href="estilos.css">
 </head>
 <body>
-  <h1>Control de Producción - Llenadora</h1>
+  <main class="wrap">
+    <h1>Control de Producción - Llenadora</h1>
 
-  <div class="selector-flex">
-    <select id="sabor">
-      <option value="Coca Cola">Powerade MZN</option>
-      <option value="Sprite">Powerade MB</option>
-      <option value="Fanta">Powerade FT</option>
-      <option value="Schweppes">Powerade Uva</option>
-      <option value="Sprite">Cepita NJA</option>
-      <option value="Fanta">Cepita DZN</option>
-      <option value="Schweppes">Cepita FM</option>
-    </select>
-    <select id="formato">
-      <option value="500 ml">500 ml</option>
-      <option value="995 ml">995 ml</option>
-      <option value="1500 ml">1500 ml</option>
-    </select>
-    <select id="turno">
-      <option value="Mañana">Turno A</option>
-      <option value="Tarde">Turno B</option>
-      <option value="Noche">Turno C</option>
-      <option value="Noche">Turno D</option>
-    </select>
-    <select id="operador">
-      <option value="1">Operador 1</option>
-      <option value="2">Operador 2</option>
-      <option value="3">Operador 3</option>
-      <option value="3">Operador 4</option>
-    </select>
-  </div>
+    <section class="grid">
+      <label>Sabor
+        <select id="sabor">
+          <option>Powerade MZN</option>
+          <option>Powerade MB</option>
+          <option>Powerade FT</option>
+          <option>Cepita NJA</option>
+          <option>Cepita DZN</option>
+        </select>
+      </label>
 
-  <label for="objetivo">Objetivo (botellas):</label>
-  <input type="number" id="objetivo" min="1" />
-  <button id="guardarObjetivoBtn">Guardar Objetivo</button>
+      <label>Formato
+        <select id="formato">
+          <option>500 ml</option>
+          <option>995 ml</option>
+          <option>1500 ml</option>
+        </select>
+      </label>
 
-  <label for="parcialInput" id="parcialLabel" style="display:none;">Agregar producción parcial</label>
-  <input type="number" id="parcialInput" min="1" style="display:none;" />
-  <button id="agregarParcialBtn" style="display:none;">Agregar Parcial</button>
+      <label>Turno
+        <select id="turno">
+          <option>Turno A</option>
+          <option>Turno B</option>
+          <option>Turno C</option>
+          <option>Turno D</option>
+        </select>
+      </label>
 
-  <!-- Contexto actual -->
-  <div id="contexto" class="contexto" style="display:none;">
-    <span class="chip chip--sabor"   id="ctxSabor"></span>
-    <span class="chip chip--formato" id="ctxFormato"></span>
-  </div>
+      <label>Operador
+        <select id="operador">
+          <option>Operador 1</option>
+          <option>Operador 2</option>
+          <option>Operador 3</option>
+        </select>
+      </label>
 
-  <div class="resumen" id="resumen" style="display:none;">
-    <div>Inicio de producción: <span id="inicio"></span></div>
-    <div>Objetivo: <span id="objetivoMostrar"></span> Botellas</div>
-    <div>Cantidad producida: <span id="acumulado"></span> Botellas</div>
-    <div>Cantidad pendiente: <span id="faltante"></span> Botellas</div>
+      <div class="estado"><span id="lblEstado">Conectando…</span></div>
+    </section>
 
-    <ul id="listaParciales"></ul>
+    <!-- Objetivo -->
+    <section id="panelObjetivo">
+      <label for="objetivo">Objetivo (botellas):</label>
+      <input id="objetivo" type="number" inputmode="numeric" placeholder="Ej: 12000" />
+      <button id="guardarObjetivoBtn" class="btn-prim">Guardar Objetivo</button>
+    </section>
 
-    <div class="barra-externa">
-      <div class="barra-interna" id="barraProgreso"></div>
-    </div>
+    <!-- Producción -->
+    <section id="resumen" style="display:none">
+      <div id="contexto" class="ctx" style="display:none">
+        <span id="ctxSabor"></span>
+        <span id="ctxFormato"></span>
+      </div>
 
-    <button id="resetBtn" style="margin-top:1rem;">Reiniciar Producción</button>
-  </div>
+      <div class="cards">
+        <div class="card"><small>Objetivo</small><strong id="objetivoMostrar">0</strong></div>
+        <div class="card"><small>Acumulado</small><strong id="acumulado">0</strong></div>
+        <div class="card"><small>Faltante</small><strong id="faltante">0</strong></div>
+        <div class="card"><small>Inicio</small><strong id="inicio">—</strong></div>
+      </div>
 
-  <!-- Kill-switch: abrir una vez con ?reset=1 para limpiar SW/caché por completo -->
-  <script>
-  (async function killSWOnce(){
-    const url = new URL(location.href);
-    if (url.searchParams.get('reset') === '1') {
-      try {
-        if ('serviceWorker' in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map(r => r.unregister()));
-        }
-        if (window.caches) {
-          const keys = await caches.keys();
-          await Promise.all(keys.map(k => caches.delete(k)));
-        }
-        alert('Cache y Service Worker eliminados. Se recarga limpio.');
-      } catch (e) {}
-      url.searchParams.delete('reset');
-      location.replace(url.toString());
-    }
-  })();
-  </script>
+      <div class="progress">
+        <div id="barraProgreso"></div>
+      </div>
 
-  <!-- Registrar SW SOLO en GitHub Pages (evita problemas al testear con Live Server) -->
-  <script>
-    if ("serviceWorker" in navigator && location.hostname.endsWith("github.io")) {
-      navigator.serviceWorker.register("./sw.js").catch(console.error);
-    }
-  </script>
+      <div class="parcial">
+        <label id="parcialLabel">Parcial (botellas):</label>
+        <input id="parcialInput" type="number" inputmode="numeric" placeholder="Ej: 500" />
+        <button id="agregarParcialBtn" class="btn-sec">Agregar parcial</button>
+        <button id="resetBtn" class="btn-warn">Reiniciar</button>
+      </div>
 
-  <!-- App (cache-busting de módulos) -->
-  <script type="module" src="firebase-config.js?v=20250915f"></script>
-  <script type="module" src="app.js?v=20250915f"></script>
+      <ul id="listaParciales"></ul>
+    </section>
+  </main>
+
+  <script type="module" src="firebase-config.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

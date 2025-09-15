@@ -1,167 +1,33 @@
-/* === Estilos (separados del HTML) === */
-body {
-  font-family: Arial, sans-serif;
-  margin: 1rem auto;
-  background: #f5f5f5;
-  color: #222;
-  font-weight: bold;
-  max-width: 600px;
-  padding: 0 1.2rem;
+:root{ --azul:#0b82ff; --gris:#f4f6f8; --ok:#28a745; --warn:#ffc107; --bad:#dc3545; }
+*{ box-sizing:border-box; font-family:system-ui,Segoe UI,Roboto,Arial; }
+body{ margin:0; background:#fff; color:#222; }
+.wrap{ max-width:900px; margin:28px auto; padding:0 16px; }
+h1{ text-align:center; color:#1170d6; margin:0 0 16px; }
+.grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; align-items:end; margin-bottom:12px; }
+label{ display:flex; flex-direction:column; gap:6px; font-weight:600; }
+select, input{ padding:10px 12px; border:1px solid #cfd6dd; border-radius:8px; background:#fff; }
+.estado{ grid-column:1 / -1; text-align:right; color:#666; font-size:14px; }
+
+.btn-prim, .btn-sec, .btn-warn{
+  padding:12px 16px; border:none; border-radius:10px; cursor:pointer; font-weight:700;
 }
-h1 { text-align: center; color: #007BFF; margin-bottom: 1rem; }
+.btn-prim{ background:var(--azul); color:#fff; width:100%; margin-top:10px; }
+.btn-sec{ background:#e8f0ff; color:#0b3c8c; }
+.btn-warn{ background:#ffe6e6; color:#a20000; margin-left:8px; }
 
-.selector-flex { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; }
-.selector-flex select {
-  flex: 1 1 calc(50% - 0.5rem);
-  padding: 0.5rem; font-size: 1rem; border-radius: 6px; border: 1px solid #ccc;
-}
+.cards{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:16px 0; }
+.card{ background:var(--gris); border-radius:12px; padding:14px; text-align:center; }
+.card small{ color:#444; display:block; }
+.card strong{ font-size:22px; }
 
-label { font-weight: bold; display: block; margin-top: 1rem; }
+.progress{ position:relative; height:22px; background:#edf2f7; border-radius:999px; overflow:hidden; }
+#barraProgreso{ position:absolute; inset:0; width:0%; background:var(--ok); color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; }
 
-input[type=number], button { width: 100%; box-sizing: border-box; font-size: 1.1rem; }
-input[type=number] {
-  padding: 0.5rem; margin-top: 0.2rem; border-radius: 6px; border: 1px solid #ccc;
-}
+.parcial{ display:flex; align-items:center; gap:10px; margin:16px 0; }
+#listaParciales{ list-style:none; padding:0; margin:0; }
+#listaParciales li{ padding:8px 10px; border-bottom:1px solid #eee; }
 
-button {
-  padding: 0.7rem; margin-top: 0.5rem; border: none; border-radius: 8px;
-  background-color: #007BFF; color: white; cursor: pointer; transition: background-color 0.3s;
-}
-button:hover:not(:disabled) { background-color: #0056b3; }
-button:disabled { background-color: #999; cursor: not-allowed; }
-
-.resumen {
-  margin-top: 2rem;
-  background: #ddd5d5;          /* gris claro */
-  padding: 1rem;
-  border-radius: 12px;
-  border: 2px solid #968181;     /* borde blanco */
-  box-shadow: 0 0 8px rgba(0,0,0,0.08);
-}
-
-
-ul {
-  margin-top: 1rem; padding-left: 0; list-style: none; background: white; border-radius: 10px;
-  max-height: 200px; overflow-y: auto; box-shadow: inset 0 0 8px rgba(0,0,0,0.05);
-}
-ul li {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 0.4rem 0.6rem; border-bottom: 1px solid #7e7373; font-size: 1.1rem;
-}
-ul li:last-child { border-bottom: none; }
-ul li button {
-  background: none; border: none; color: #dc3545; font-size: 1.2rem; cursor: pointer;
-  padding: 0 6px; transition: color 0.3s;
-}
-ul li button:hover { color: #a71d2a; }
-
-/* Barra de progreso — fix visual */
-/* Progreso responsivo y centrado */
-/* --- Progreso: alto cómodo y texto centrado, sin que lo afecte .resumen > div --- */
-.resumen > .barra-externa{
-  /* Anula el estilo genérico de las "tarjetitas" del resumen */
-  padding: 0 !important;
-  background: transparent !important;
-  border-left: 0 !important;
-  box-shadow: none !important;
-}
-
-/* Contenedor de la barra */
-.barra-externa{
-  width: 100%;
-  height: clamp(28px, 6vw, 40px); /* más alto y responsivo */
-  background: #e9ecef;
-  border-radius: 999px;
-  overflow: hidden;
-  position: relative;
-  box-sizing: border-box;
-  margin-top: 12px;
-  line-height: normal;          /* evita que tipografías inflen la altura visual */
-}
-
-/* Etiqueta del porcentaje superpuesta y centrada */
-.barra-externa::after{
-  content: attr(data-label);
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: clamp(.85rem, 2.8vw, 1rem);
-  color: #111;
-  pointer-events: none;
-  white-space: nowrap;
-}
-
-/* Relleno */
-.barra-interna{
-  width: 0%;
-  height: 100%;
-  background: #28a745;
-  border-radius: inherit;
-  transition: width .35s ease, background-color .15s linear;
-  will-change: width;
-  max-width: 100%;
-  min-height: 100%;            /* asegura que llene toda la altura del contenedor */
-}
-
-*,*::before,*::after{ box-sizing: border-box; }
-
-
-#resetBtn { background-color: #dc3545; }
-
-@media (max-width: 768px) {
-  body { max-width: 100%; padding-left: 1rem; padding-right: 1.5rem; }
-  .selector-flex select { flex: 1 1 100%; }
-}
-
-/* ——— Mejora de legibilidad del resumen ——— */
-
-
-/* Cada dato del resumen como “tarjetita” con color suave */
-.resumen > div {
-  padding: 10px 12px;
-  border-radius: 10px;
-  border-left: 6px solid transparent;
-  background: #f5f5f5;
-}
-
-/* 1) Inicio  2) Objetivo  3) Producido  4) Pendiente */
-.resumen > div:nth-of-type(1) { background:#f3f4f6; border-left-color:#9ca3af; } /* gris */
-.resumen > div:nth-of-type(2) { background:#eaf2ff; border-left-color:#3b82f6; } /* azul suave */
-.resumen > div:nth-of-type(3) { background:#e9fbea; border-left-color:#22c55e; } /* verde */
-.resumen > div:nth-of-type(4) { background:#fff6e7; border-left-color:#f59e0b; } /* ámbar */
-
-/* resaltar los números */
-#objetivoMostrar, #acumulado, #faltante { font-weight: 700; }
-
-/* Un poco más de aire antes de la lista y la barra */
-#listaParciales { margin-top: 8px; }
-.barra-externa  { margin-top: 12px; }
-
-/* Encabezado de contexto: Sabor / Formato */
-.contexto{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-  margin:10px 0 6px;
-}
-.chip{
-  padding:6px 10px;
-  border-radius:999px;
-  font-weight:700;
-  font-size:.95rem;
-  color:#111;
-  background:#fff;
-  border:1px solid #e5e7eb;
-  box-shadow: 0 1px 0 rgba(0,0,0,.04);
-}
-.chip--sabor{
-  background:#eaf2ff;           /* azul suave */
-  border-color:#c7dcff;
-}
-.chip--formato{
-  background:#fff6e7;           /* ámbar suave */
-  border-color:#fbd9a6;
+@media (max-width:760px){
+  .grid{ grid-template-columns:1fr 1fr; }
+  .cards{ grid-template-columns:1fr 1fr; }
 }
