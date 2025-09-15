@@ -1,11 +1,21 @@
-// app.js — Producción L1 (Tiempo real con Firestore, sin persistencia)
-console.log('[ProduccionL1] app.js cargado', new Date().toISOString());
+// app.js — Producción L1 (Tiempo real con Firestore, server-first y reset con session)
 
 import { app, db } from "./firebase-config.js";
-import { doc, setDoc, updateDoc, onSnapshot }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getAuth, signInAnonymously, onAuthStateChanged }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  doc,
+  setDoc,
+  updateDoc,
+  onSnapshot,
+  getDocFromServer,   // server-first
+  getDoc,             // fallback offline
+  serverTimestamp,    // marcas de tiempo
+  increment           // session++
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getAuth,
+  signInAnonymously,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 /* ===== Estado ===== */
 let objetivo = 0;
@@ -13,6 +23,7 @@ let inicioProduccion = null;
 let unsubscribe = null;
 let authed = false;
 let lastSnap = { parciales: {}, cumplimientoObjetivo: 0 };
+let session = 1;
 
 /* ===== Refs DOM ===== */
 const objetivoLabel      = document.querySelector('label[for="objetivo"]');
@@ -60,7 +71,7 @@ function getDocId() {
   const fecha      = hoyYYYYMMDD();
   const saborTxt   = safeIdPart(getSelectedText(saborSelect));
   const formatoTxt = safeIdPart(getSelectedText(formatoSelect));
-  return `${fecha}__${saborTxt}_${formatoTxt}`; // SIN turno
+  return `${fecha}__${saborTxt}_${formatoTxt}`; // SIN turno (turno vive dentro del doc)
 }
 function turnoKey() {
   const t = getSelectedText(turnoSelect);
@@ -94,13 +105,13 @@ function actualizarColorFormato(){
 }
 function mostrarObjetivoControls(mostrar){
   if (objetivoLabel) objetivoLabel.style.display = mostrar ? 'block' : 'none';
-  objetivoInput.style.display = mostrar ? 'block' : 'none';
-  guardarObjetivoBtn.style.display = mostrar ? 'block' : 'none';
+  if (objetivoInput) objetivoInput.style.display = mostrar ? 'block' : 'none';
+  if (guardarObjetivoBtn) guardarObjetivoBtn.style.display = mostrar ? 'block' : 'none';
 }
 function mostrarControlesProduccion(mostrar){
-  parcialInput.style.display = mostrar ? 'block' : 'none';
-  agregarParcialBtn.style.display = mostrar ? 'block' : 'none';
-  parcialLabel.style.display = mostrar ? 'block' : 'none';
+  if (parcialInput) parcialInput.style.display = mostrar ? 'block' : 'none';
+  if (agregarParcialBtn) agregarParcialBtn.style.display = mostrar ? 'block' : 'none';
+  if (parcialLabel) parcialLabel.style.display = mostrar ? 'block' : 'none';
 }
 
 /* ===== UI extra ===== */
@@ -122,9 +133,9 @@ function ensureProdTitle(){
 /* ===== Firestore ===== */
 function refActual(){ return doc(db, "produccion", getDocId()); }
 function setBotonesEnabled(enabled){
-  guardarObjetivoBtn.disabled = !enabled;
-  agregarParcialBtn.disabled  = !enabled;
-  resetBtn.disabled           = !enabled;
+  if (guardarObjetivoBtn) guardarObjetivoBtn.disabled = !enabled;
+  if (agregarParcialBtn)  agregarParcialBtn.disabled  = !enabled;
+  if (resetBtn)           resetBtn.disabled           = !enabled;
   const btn = document.getElementById('guardarCumplBtn');
   if (btn) btn.disabled = !enabled;
 }
@@ -136,47 +147,92 @@ async function initAuth(){
     onAuthStateChanged(auth, async(user)=>{
       if (user){
         console.log('[auth] signed in anon uid=', user.uid);
-        authed = true; setBotonesEnabled(true); escucharDocumentoActual(); resolve();
+        authed = true; setBotonesEnabled(true);
+        escucharDocumentoActual();
+        resolve();
       } else {
         try { await signInAnonymously(auth); }
-        catch(e){ authed=false; setBotonesEnabled(false);
+        catch(e){
+          authed=false; setBotonesEnabled(false);
           alert('No se pudo iniciar sesión anónima. Activá "Anonymous" en Firebase → Authentication.\n'
-                + `${e.code || ''} ${e.message || ''}`); resolve();
+                + `${e.code || ''} ${e.message || ''}`);
+          resolve();
         }
       }
     });
   });
 }
 
+/* ===== Server-first + Create-if-missing ===== */
+async function ensureDocExistsFresh() {
+  const ref = refActual();
+  let snap;
+
+  try {
+    // Fuerza leer del servidor (sin cache) para evitar “objetivos fantasma”
+    snap = await getDocFromServer(ref);
+  } catch (e) {
+    // Si estás offline o falla, usamos cache como fallback
+    snap = await getDoc(ref);
+  }
+
+  if (!snap.exists()) {
+    await setDoc(ref, {
+      objetivo: 0,
+      parciales: {},
+      inicio: null,
+      session: 1,
+      updatedAt: serverTimestamp(),
+      resetAt: null
+    }, { merge: true });
+    session = 1;
+    return;
+  }
+
+  const data = snap.data() || {};
+  session = Number(data.session || 1);
+}
+
 /* ===== Snapshot ===== */
 function escucharDocumentoActual(){
   if (!authed) return;
+
   if (typeof unsubscribe === 'function') { unsubscribe(); unsubscribe = null; }
 
-  const ref = refActual();
-  unsubscribe = onSnapshot(ref, (snap)=>{
-    console.log('[SNAP]', getDocId(), 'exists:', snap.exists());
-    const data = snap.data() || {};
-    lastSnap = {
-      ...data,
-      parciales: data.parciales || {},
-      cumplimientoObjetivo: Number(data.cumplimientoObjetivo || 0)
-    };
+  // Primero garantizamos doc fresco/creado
+  ensureDocExistsFresh().then(()=> {
+    const ref = refActual();
 
-    objetivo = Number(lastSnap.objetivo || 0);
-    inicioProduccion = lastSnap.inicio || null;
+    // includeMetadataChanges ayuda a detectar cache vs servidor
+    unsubscribe = onSnapshot(ref, { includeMetadataChanges: true }, (snap)=>{
+      console.log('[SNAP]', getDocId(), 'exists:', snap.exists());
+      if (!snap.exists()) return;
 
-    objetivoInput.value = objetivo > 0 ? objetivo : '';
-    const tieneObjetivo = objetivo > 0;
+      const data = snap.data() || {};
+      lastSnap = {
+        ...data,
+        parciales: data.parciales || {},
+        cumplimientoObjetivo: Number(data.cumplimientoObjetivo || 0)
+      };
 
-    mostrarObjetivoControls(!tieneObjetivo);
-    mostrarControlesProduccion(tieneObjetivo);
+      // tomar session del servidor
+      session = Number(data.session || session || 1);
 
-    actualizarResumen();
-    renderContexto();
-  }, (err)=>{
-    console.error("onSnapshot error:", err);
-    alert(`Error al leer datos: ${err.code || ''} ${err.message || ''}`);
+      objetivo = Number(lastSnap.objetivo || 0);
+      inicioProduccion = lastSnap.inicio || null;
+
+      objetivoInput.value = objetivo > 0 ? objetivo : '';
+      const tieneObjetivo = objetivo > 0;
+
+      mostrarObjetivoControls(!tieneObjetivo);
+      mostrarControlesProduccion(tieneObjetivo);
+
+      actualizarResumen();
+      renderContexto();
+    }, (err)=>{
+      console.error("onSnapshot error:", err);
+      alert(`Error al leer datos: ${err.code || ''} ${err.message || ''}`);
+    });
   });
 }
 
@@ -259,7 +315,8 @@ async function guardarObjetivoHandler(){
     await setDoc(ref, {
       objetivo,
       inicio: inicioProduccion,
-      parciales: lastSnap.parciales || {}
+      parciales: lastSnap.parciales || {},
+      updatedAt: serverTimestamp()     // marca actualización
     }, { merge: true });
 
     mostrarObjetivoControls(false);
@@ -289,11 +346,11 @@ async function agregarParcialHandler(){
   const nuevos = (lastSnap.parciales?.[k] || []).concat([{ cantidad: val, ts: Date.now() }]);
 
   try {
-    await updateDoc(ref, { [`parciales.${k}`]: nuevos });
+    await updateDoc(ref, { [`parciales.${k}`]: nuevos, updatedAt: serverTimestamp() });
     parcialInput.value = '';
   } catch (e) {
     if (e.code === 'not-found') {
-      await setDoc(ref, { parciales: { [k]: nuevos } }, { merge: true });
+      await setDoc(ref, { parciales: { [k]: nuevos }, updatedAt: serverTimestamp() }, { merge: true });
       parcialInput.value = '';
     } else {
       console.error(e);
@@ -305,17 +362,24 @@ async function agregarParcialHandler(){
 /* ===== Listeners ===== */
 function onSelectorChange(){
   actualizarColorFormato();
-  escucharDocumentoActual();
-  renderContexto();
+
+  // Cortar listener actual
+  if (typeof unsubscribe === 'function') { unsubscribe(); unsubscribe = null; }
+
+  // Forzar doc fresco del servidor y recién ahí volver a escuchar
+  ensureDocExistsFresh().then(()=>{
+    escucharDocumentoActual();
+    renderContexto();
+  });
 }
-saborSelect.addEventListener('change', onSelectorChange);
-formatoSelect.addEventListener('change', onSelectorChange);
-turnoSelect.addEventListener('change', onSelectorChange);
+if (saborSelect)   saborSelect.addEventListener('change', onSelectorChange);
+if (formatoSelect) formatoSelect.addEventListener('change', onSelectorChange);
+if (turnoSelect)   turnoSelect.addEventListener('change', onSelectorChange);
 
-guardarObjetivoBtn?.addEventListener('click', guardarObjetivoHandler);
-agregarParcialBtn?.addEventListener('click', agregarParcialHandler);
+if (guardarObjetivoBtn) guardarObjetivoBtn.addEventListener('click', guardarObjetivoHandler);
+if (agregarParcialBtn)  agregarParcialBtn.addEventListener('click', agregarParcialHandler);
 
-resetBtn.addEventListener('click', async ()=>{
+if (resetBtn) resetBtn.addEventListener('click', async ()=>{
   if (!authed) return;
   if (!confirm('¿Reiniciar la producción completa de esta combinación (TODOS los turnos)?')) return;
 
@@ -324,14 +388,27 @@ resetBtn.addEventListener('click', async ()=>{
 
   const ref = refActual();
   try {
-    await setDoc(ref, { objetivo: 0, parciales: {}, inicio: null }, { merge: true });
+    await setDoc(ref, {
+      objetivo: 0,
+      parciales: {},
+      inicio: null,
+      session: increment(1),     // clave: nueva sesión → todos “olvidan” estados viejos
+      resetAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    // Reenganchar con datos frescos del servidor
+    if (typeof unsubscribe === 'function') { unsubscribe(); unsubscribe = null; }
+    await ensureDocExistsFresh();
+    escucharDocumentoActual();
+
   } catch (e) {
     console.error(e);
     alert(`No se pudo reiniciar.\n${e.code || ''} ${e.message || ''}`);
   }
 
-  objetivoInput.value = '';
-  parcialInput.value = '';
+  if (objetivoInput) objetivoInput.value = '';
+  if (parcialInput)  parcialInput.value  = '';
   mostrarObjetivoControls(true);
   mostrarControlesProduccion(false);
   actualizarResumen();
@@ -344,10 +421,14 @@ resetBtn.addEventListener('click', async ()=>{
   mostrarObjetivoControls(true);
   setBotonesEnabled(false);
   await initAuth();
+
+  // server-first al arrancar para evitar objetivos cacheados
+  await ensureDocExistsFresh();
+
   renderContexto();
 })();
 
-// === DEBUG BANNER ULTRA-VISIBLE ===
+/* ===== DEBUG BANNER ULTRA-VISIBLE ===== */
 (function dbgBanner(){
   function ensure(){
     let host = document.getElementById('debugDoc');
