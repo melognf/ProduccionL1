@@ -16,11 +16,15 @@ let unsubscribe = null;
 let lastSnap = { parciales:{}, updatedAt:null };
 let session = 1;
 
+// “Modo nuevo objetivo” para NO revivir objetivos viejos al cambiar combo.
+// Y timestamp desde que entramos a ese modo, para adoptar solo cambios nuevos.
+let preferirModoNuevoObjetivo = true;
+let modoNuevoDesdeMs = Date.now();
+
 // ===== Refs UI
 const saborSelect   = document.getElementById('sabor');
 const formatoSelect = document.getElementById('formato');
 const turnoSelect   = document.getElementById('turno');
-const operadorSelect= document.getElementById('operador');
 
 const objetivoInput      = document.getElementById('objetivo');
 const guardarObjetivoBtn = document.getElementById('guardarObjetivoBtn');
@@ -70,7 +74,7 @@ async function initAuth(){
   });
 }
 
-// ===== Server-first (solo lectura)
+// ===== Server-first (solo lectura, NO crea doc)
 async function getFreshData(){
   const ref = refActual();
   let snap;
@@ -88,18 +92,33 @@ function subscribe(){
     const ref = refActual();
     unsubscribe = onSnapshot(ref, { includeMetadataChanges:true }, snap=>{
       if (!snap.exists()){
-        // No hay doc → UI en modo “nuevo objetivo”
+        // No hay doc → modo “nuevo objetivo”
         objetivo = 0;
         inicioProduccion = null;
         lastSnap = { parciales:{}, updatedAt:null };
-        pintar();
+        render();
         return;
       }
+
       const data = snap.data() || {};
       lastSnap = data;
       objetivo = Number(data.objetivo || 0);
       inicioProduccion = data.inicio || null;
-      pintar();
+
+      // --- Anti-objetivo-viejo + adopción automática de objetivo NUEVO ---
+      const vinoDeServidor = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites;
+      const inputVacio     = !objetivoInput || !objetivoInput.value.trim();
+      const updatedAtMs    = (data.updatedAt && data.updatedAt.toMillis) ? data.updatedAt.toMillis() : 0;
+      const objetivoReciente = updatedAtMs > modoNuevoDesdeMs; // solo si alguien lo fijó DESPUÉS de entrar
+
+      // Si estoy en modo nuevo, el doc tiene objetivo>0 y llegó del servidor un cambio reciente,
+      // adopto automáticamente y salgo del modo nuevo.
+      if (preferirModoNuevoObjetivo && objetivo>0 && vinoDeServidor && inputVacio && objetivoReciente){
+        preferirModoNuevoObjetivo = false;
+      }
+      // -------------------------------------------------------------------
+
+      render();
 
       if (snap.metadata.hasPendingWrites) setEstado('Enviando cambios…');
       else if (snap.metadata.fromCache)  setEstado('Sincronizando…');
@@ -108,10 +127,12 @@ function subscribe(){
   });
 }
 
-// ===== Pintar UI
-function pintar(){
+// ===== Render
+function render(){
   const sabor=getText(saborSelect), formato=getText(formatoSelect);
-  const tieneObj = objetivo>0;
+
+  // Mostrar producción SOLO si hay objetivo y no estamos en modo nuevo
+  const tieneObj = objetivo>0 && !preferirModoNuevoObjetivo;
 
   panelObjetivo.style.display = tieneObj ? 'none':'block';
   resumenDiv.style.display    = tieneObj ? 'block':'none';
@@ -122,17 +143,19 @@ function pintar(){
     document.getElementById('contexto').style.display = 'flex';
   } else {
     document.getElementById('contexto').style.display = 'none';
-    objetivoInput.value = '';
+    objetivoInput.value = '';        // NO prellenar con viejo
   }
 
-  objetivoMostrar.textContent = (objetivo||0).toLocaleString('es-AR');
+  // Mostrar objetivo solo si está activo; si no, mostrar 0
+  objetivoMostrar.textContent = tieneObj ? (objetivo||0).toLocaleString('es-AR') : '0';
 
+  // Parciales + resumen
   const parcialesByTurno = lastSnap.parciales || {};
   const items = [];
   Object.entries(parcialesByTurno).forEach(([k,arr])=>{
     (Array.isArray(arr)?arr:[]).forEach(p=> items.push({k,p}));
   });
-  items.sort((a,b)=> (a.p?.ts||0) - (b.p?.ts||0));
+  items.sort((a,b)=> (a.p?.ts||0) - (b.p?.ts||0)); // asc
 
   const acumulado = items.reduce((acc,it)=> acc + (parseInt(it.p?.cantidad)||0), 0);
   acumuladoSpan.textContent = acumulado.toLocaleString('es-AR');
@@ -142,14 +165,14 @@ function pintar(){
   listaParciales.innerHTML = '';
   items.slice().reverse().forEach((it,idx)=>{
     const tsTxt = it.p?.ts ? fmt(it.p.ts) : '—';
-    const opTxt = it.p?.op ? ` — ${it.p.op}` : '';
     const li = document.createElement('li');
-    li.textContent = `#${idx+1} — ${it.p.cantidad?.toLocaleString('es-AR')} — Turno ${it.k}${opTxt} — ${tsTxt}`;
+    li.textContent = `#${idx+1} — ${it.p.cantidad?.toLocaleString('es-AR')} — Turno ${it.k} — ${tsTxt}`;
     listaParciales.appendChild(li);
   });
 
+  // Barra
   let pct = 0;
-  if (objetivo>0) pct = Math.round( (acumulado / objetivo) * 100 );
+  if (tieneObj) pct = Math.round( (acumulado / objetivo) * 100 );
   pct = Math.max(0, Math.min(100, pct));
   barraProgreso.style.width = `${pct}%`;
   barraProgreso.textContent = pct ? `${pct}%` : '';
@@ -169,10 +192,13 @@ guardarObjetivoBtn.addEventListener('click', async ()=>{
   await setDoc(ref, {
     objetivo,
     inicio: inicioProduccion,
-    updatedAt: serverTimestamp(),
-    session: session || 1,
-    // conservamos parciales existentes si los hubiera
+    updatedAt: serverTimestamp(),     // CLAVE para adopción
+    session: session || 1
   }, { merge:true });
+
+  // Este equipo sale del modo nuevo inmediatamente
+  preferirModoNuevoObjetivo = false;
+  render();
 });
 
 agregarParcialBtn.addEventListener('click', async ()=>{
@@ -180,21 +206,13 @@ agregarParcialBtn.addEventListener('click', async ()=>{
   const val = parseInt(String(parcialInput.value).replace(/\D/g,''));
   if (!val || val<=0){ alert('Ingresá un número válido (>0)'); return; }
 
-  // (opcional) impedir superar objetivo
-  const acumulado = Object.values(lastSnap.parciales||{}).flat()
-    .reduce((a,p)=>a+(parseInt(p?.cantidad)||0),0);
-  const restante = Math.max((objetivo||0)-acumulado,0);
-  if (restante && val>restante){
-    if (!confirm(`Este parcial (${val.toLocaleString('es-AR')}) supera el restante (${restante.toLocaleString('es-AR')}). ¿Agregar igual?`)) return;
-  }
-
   const ref = refActual();
   const k = turnoKey();
-  const item = { cantidad: val, ts: Date.now(), op: getText(operadorSelect) };
+  const item = { cantidad: val, ts: Date.now() };
 
   try{
     await updateDoc(ref, {
-      [`parciales.${k}`]: arrayUnion(item), // append atómico → no pisa a otros
+      [`parciales.${k}`]: arrayUnion(item),  // append atómico (sin pisadas)
       updatedAt: serverTimestamp()
     });
     parcialInput.value='';
@@ -227,11 +245,23 @@ resetBtn.addEventListener('click', async ()=>{
     resetAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   }, { merge:true });
+
+  // Volvemos a “nuevo objetivo” y arrancamos un ciclo limpio
+  preferirModoNuevoObjetivo = true;
+  modoNuevoDesdeMs = Date.now();
+  render();
 });
 
 // ===== Selectores
 [saborSelect, formatoSelect, turnoSelect].forEach(sel=>{
-  sel.addEventListener('change', ()=>{ subscribe(); });
+  sel.addEventListener('change', ()=>{
+    // nuevo combo → “nuevo objetivo” hasta que alguien lo fije
+    preferirModoNuevoObjetivo = true;
+    modoNuevoDesdeMs = Date.now();
+
+    if (unsubscribe){ unsubscribe(); unsubscribe=null; }
+    subscribe();
+  });
 });
 
 // ===== Init
