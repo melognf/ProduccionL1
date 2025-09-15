@@ -492,23 +492,38 @@ resetBtn.addEventListener('click', async ()=>{
   renderContexto();
 })();
 
-// === DEBUG: mostrar docId y estado actual en pantalla ===
-(function dbg() {
-  const host = document.createElement('div');
-  host.id = 'debugDoc';
-  host.style.cssText = 'position:fixed;left:8px;bottom:8px;background:#111;color:#fff;padding:6px 8px;border-radius:8px;font:12px monospace;z-index:9999;opacity:.85';
-  document.body.appendChild(host);
-
-  function paint() {
-    const id = getDocId();
-    const total = (typeof lastSnap?.parciales === 'object')
-      ? Object.values(lastSnap.parciales).flat().reduce((a,p)=>a+(parseInt(p?.cantidad)||0),0)
-      : 0;
-    host.textContent = `doc: ${id} | obj:${objetivo||0} | prod:${total}`;
+// === DEBUG BANNER ULTRA-VISIBLE ===
+(function dbgBanner(){
+  function ensure(){
+    let host = document.getElementById('debugDoc');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'debugDoc';
+      host.style.cssText = `
+        position:fixed; left:8px; bottom:8px; right:auto; 
+        background:#000; color:#0f0; padding:6px 8px; 
+        border:2px solid #0f0; border-radius:8px; 
+        font:12px/1.2 monospace; z-index:99999; opacity:.95`;
+      host.textContent = 'cargando…';
+      document.body.appendChild(host);
+    }
+    paint();
   }
-
-  // repintar ante cambios relevantes
-  ['change','input','click'].forEach(evt => document.addEventListener(evt, paint, true));
-  setInterval(paint, 1000);
-  paint();
+  function paint(){
+    try {
+      const id = (typeof getDocId === 'function') ? getDocId() : '(getDocId no definido)';
+      const total = (lastSnap && typeof lastSnap.parciales === 'object')
+        ? Object.values(lastSnap.parciales).flat().reduce((a,p)=>a+(parseInt(p?.cantidad)||0),0)
+        : 0;
+      const obj = (typeof objetivo === 'number') ? objetivo : (window.objetivo||0);
+      document.getElementById('debugDoc').textContent = `doc: ${id} | obj:${obj} | prod:${total}`;
+    } catch(e){
+      document.getElementById('debugDoc').textContent = `debug init… ${e.message||e}`;
+    }
+  }
+  // pintar al cargar y cada 1s
+  window.addEventListener('load', ensure);
+  const iv = setInterval(()=> {
+    if (document.body) ensure();
+  }, 1000);
 })();
