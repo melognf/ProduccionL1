@@ -1,5 +1,6 @@
-// app.js — Producción L1 (server-first, session++, y "modo nuevo objetivo")
+// app.js — Producción L1 (server-first, session++, y "modo nuevo objetivo" con updatedAt)
 
+// ========== Imports ==========
 import { app, db } from "./firebase-config.js";
 import {
   doc,
@@ -17,7 +18,7 @@ import {
   onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-/* ===== Estado ===== */
+// ========== Estado ==========
 let objetivo = 0;
 let inicioProduccion = null;
 let unsubscribe = null;
@@ -25,13 +26,12 @@ let authed = false;
 let lastSnap = { parciales: {}, cumplimientoObjetivo: 0 };
 let session = 1;
 
-// Evita precargar objetivo previo al cambiar de sabor/formato/turno
+// Evita precargar objetivo previo al cambiar combo
 let preferirModoNuevoObjetivo = false;
-// Marca desde cuándo estamos en “modo nuevo” (ms)
+// Marca el instante en que entramos a “modo nuevo”
 let modoNuevoDesdeMs = 0;
 
-
-/* ===== Refs DOM ===== */
+// ========== Refs DOM ==========
 const objetivoLabel      = document.querySelector('label[for="objetivo"]');
 const objetivoInput      = document.getElementById('objetivo');
 const guardarObjetivoBtn = document.getElementById('guardarObjetivoBtn');
@@ -56,7 +56,7 @@ const contexto           = document.getElementById('contexto');
 const ctxSabor           = document.getElementById('ctxSabor');
 const ctxFormato         = document.getElementById('ctxFormato');
 
-/* ===== Helpers ===== */
+// ========== Helpers ==========
 const getSelectedText = (sel) =>
   sel?.options?.[sel.selectedIndex]?.text?.trim() || sel?.value || '';
 
@@ -104,23 +104,23 @@ function fmtFechaHora(ts){
 function actualizarColorFormato(){
   const txt = getSelectedText(formatoSelect);
   let color = '#fff';
-  if (txt.includes('500')) color = '#cceeff';
-  else if (txt.includes('995')) color = '#f0a13c';
+  if (txt.includes('500'))  color = '#cceeff';
+  else if (txt.includes('995'))  color = '#f0a13c';
   else if (txt.includes('1500')) color = '#948d7b';
   formatoSelect.style.backgroundColor = color;
 }
 function mostrarObjetivoControls(mostrar){
-  if (objetivoLabel) objetivoLabel.style.display = mostrar ? 'block' : 'none';
-  if (objetivoInput) objetivoInput.style.display = mostrar ? 'block' : 'none';
+  if (objetivoLabel)      objetivoLabel.style.display = mostrar ? 'block' : 'none';
+  if (objetivoInput)      objetivoInput.style.display = mostrar ? 'block' : 'none';
   if (guardarObjetivoBtn) guardarObjetivoBtn.style.display = mostrar ? 'block' : 'none';
 }
 function mostrarControlesProduccion(mostrar){
-  if (parcialInput) parcialInput.style.display = mostrar ? 'block' : 'none';
-  if (agregarParcialBtn)  agregarParcialBtn.style.display = mostrar ? 'block' : 'none';
-  if (parcialLabel) parcialLabel.style.display = mostrar ? 'block' : 'none';
+  if (parcialInput)      parcialInput.style.display = mostrar ? 'block' : 'none';
+  if (agregarParcialBtn) agregarParcialBtn.style.display = mostrar ? 'block' : 'none';
+  if (parcialLabel)      parcialLabel.style.display = mostrar ? 'block' : 'none';
 }
 
-/* ===== UI extra ===== */
+// ========== UI extra ==========
 function ensureProdTitle(){
   const barraPrincipal = document.getElementById('barraProgreso');
   if (!barraPrincipal || !resumenDiv) return;
@@ -136,7 +136,7 @@ function ensureProdTitle(){
   }
 }
 
-/* ===== Firestore ===== */
+// ========== Firestore ==========
 function refActual(){ return doc(db, "produccion", getDocId()); }
 function setBotonesEnabled(enabled){
   if (guardarObjetivoBtn) guardarObjetivoBtn.disabled = !enabled;
@@ -146,7 +146,7 @@ function setBotonesEnabled(enabled){
   if (btn) btn.disabled = !enabled;
 }
 
-/* ===== Auth ===== */
+// ========== Auth ==========
 async function initAuth(){
   const auth = getAuth(app);
   return new Promise((resolve)=>{
@@ -169,7 +169,7 @@ async function initAuth(){
   });
 }
 
-/* ===== Server-first + Create-if-missing ===== */
+// ========== Server-first + Create-if-missing ==========
 async function ensureDocExistsFresh() {
   const ref = refActual();
   let snap;
@@ -199,7 +199,7 @@ async function ensureDocExistsFresh() {
   session = Number(data.session || 1);
 }
 
-/* ===== Snapshot ===== */
+// ========== Snapshot ==========
 function escucharDocumentoActual(){
   if (!authed) return;
 
@@ -227,39 +227,48 @@ function escucharDocumentoActual(){
       objetivo = Number(lastSnap.objetivo || 0);
       inicioProduccion = lastSnap.inicio || null;
 
+      // ---------- Anti-objetivo-viejo con updatedAt ----------
       let tieneObjetivo = objetivo > 0;
 
-// ¿Llegó un cambio del SERVIDOR (no cache, sin pending writes)?
-const vinoDeServidor = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites;
-// ¿El usuario de este equipo no escribió nada aún?
-const inputVacio = !objetivoInput || String(objetivoInput.value).trim() === '';
-// ¿El doc tiene updatedAt? (Timestamp de Firestore)
-const updatedAtMs = (lastSnap?.updatedAt && typeof lastSnap.updatedAt.toMillis === 'function')
-  ? lastSnap.updatedAt.toMillis()
-  : 0;
+      // ¿Llegó un cambio del SERVIDOR (no cache, sin pending writes)?
+      const vinoDeServidor = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites;
+      // ¿El usuario de este equipo no escribió nada aún?
+      const inputVacio = !objetivoInput || String(objetivoInput.value).trim() === '';
+      // ¿El doc tiene updatedAt (Timestamp de Firestore)?
+      const updatedAtMs = (lastSnap?.updatedAt && typeof lastSnap.updatedAt.toMillis === 'function')
+        ? lastSnap.updatedAt.toMillis()
+        : 0;
 
-// 👉 Solo adoptamos si el objetivo fue actualizado DESPUÉS de entrar en modo nuevo.
-// Así evitamos “revivir” objetivos viejos.
-const objetivoReciente = updatedAtMs > modoNuevoDesdeMs;
+      // Solo adoptamos si el objetivo fue actualizado DESPUÉS de entrar en modo nuevo.
+      // Así evitamos “revivir” objetivos viejos.
+      const objetivoReciente = updatedAtMs > modoNuevoDesdeMs;
 
-if (preferirModoNuevoObjetivo && tieneObjetivo && vinoDeServidor && inputVacio && objetivoReciente) {
-  // Alguien fijó un objetivo AHORA para este combo → lo adoptamos
-  preferirModoNuevoObjetivo = false;
-}
+      if (preferirModoNuevoObjetivo && tieneObjetivo && vinoDeServidor && inputVacio && objetivoReciente) {
+        // Alguien fijó un objetivo AHORA para este combo → lo adoptamos
+        preferirModoNuevoObjetivo = false;
+      }
 
-if (preferirModoNuevoObjetivo) {
-  if (objetivoInput) objetivoInput.value = ''; // no prellenar
-  mostrarObjetivoControls(true);
-  mostrarControlesProduccion(false);
-} else {
-  if (objetivoInput) objetivoInput.value = tieneObjetivo ? objetivo : '';
-  mostrarObjetivoControls(!tieneObjetivo);
-  mostrarControlesProduccion(tieneObjetivo);
-}
-
+      if (preferirModoNuevoObjetivo) {
+        if (objetivoInput) objetivoInput.value = ''; // no prellenar
+        mostrarObjetivoControls(true);
+        mostrarControlesProduccion(false);
+      } else {
+        if (objetivoInput) objetivoInput.value = tieneObjetivo ? objetivo : '';
+        mostrarObjetivoControls(!tieneObjetivo);
+        mostrarControlesProduccion(tieneObjetivo);
+      }
+      // ---------- fin anti-objetivo-viejo ----------
 
       actualizarResumen();
       renderContexto();
+
+      // (Opcional) Indicador de estado si tenés <span id="lblEstado">
+      const lbl = document.getElementById('lblEstado');
+      if (lbl) {
+        if (snap.metadata.hasPendingWrites)      lbl.textContent = 'Enviando cambios…';
+        else if (snap.metadata.fromCache)         lbl.textContent = 'Sincronizando…';
+        else                                      lbl.textContent = 'Conectado';
+      }
     }, (err)=>{
       console.error("onSnapshot error:", err);
       alert(`Error al leer datos: ${err.code || ''} ${err.message || ''}`);
@@ -267,7 +276,7 @@ if (preferirModoNuevoObjetivo) {
   });
 }
 
-/* ===== Render ===== */
+// ========== Render ==========
 function renderContexto(){
   if (!contexto || !ctxSabor || !ctxFormato) return;
   if (objetivo > 0 && !preferirModoNuevoObjetivo){
@@ -332,7 +341,7 @@ function actualizarResumen(){
   }
 }
 
-/* ===== Acciones ===== */
+// ========== Acciones ==========
 async function guardarObjetivoHandler(){
   if (!authed) { alert('No hay sesión. Activá Anonymous en Firebase Authentication.'); return; }
   const val = parseInt(String(objetivoInput.value).replace(/\D/g, ''));
@@ -347,10 +356,10 @@ async function guardarObjetivoHandler(){
       objetivo,
       inicio: inicioProduccion,
       parciales: lastSnap.parciales || {},
-      updatedAt: serverTimestamp()     // marca actualización
+      updatedAt: serverTimestamp()     // marca actualización (clave para el fix)
     }, { merge: true });
 
-    // 👇 al confirmar objetivo, salimos del modo nuevo
+    // al confirmar objetivo, salimos del modo nuevo
     preferirModoNuevoObjetivo = false;
 
     mostrarObjetivoControls(false);
@@ -393,13 +402,13 @@ async function agregarParcialHandler(){
   }
 }
 
-/* ===== Listeners ===== */
+// ========== Listeners ==========
 function onSelectorChange(){
   actualizarColorFormato();
 
+  // Entramos a "nuevo objetivo" y registramos el instante
   preferirModoNuevoObjetivo = true;
-modoNuevoDesdeMs = Date.now();
-
+  modoNuevoDesdeMs = Date.now();
 
   // Cortar listener actual
   if (typeof unsubscribe === 'function') { unsubscribe(); unsubscribe = null; }
@@ -440,9 +449,9 @@ if (resetBtn) resetBtn.addEventListener('click', async ()=>{
       updatedAt: serverTimestamp()
     }, { merge: true });
 
+    // tras reset, quedamos en "nuevo objetivo" y marcamos el instante
     preferirModoNuevoObjetivo = true;
-modoNuevoDesdeMs = Date.now();
-
+    modoNuevoDesdeMs = Date.now();
 
     // Reenganchar con datos frescos del servidor
     if (typeof unsubscribe === 'function') { unsubscribe(); unsubscribe = null; }
@@ -462,11 +471,13 @@ modoNuevoDesdeMs = Date.now();
   renderContexto();
 });
 
-/* ===== Init ===== */
+// ========== Init ==========
 (async function init(){
   actualizarColorFormato();
+
+  // arrancamos en "modo nuevo objetivo" y registramos el instante
   preferirModoNuevoObjetivo = true;
-modoNuevoDesdeMs = Date.now();
+  modoNuevoDesdeMs = Date.now();
 
   mostrarObjetivoControls(true);
   setBotonesEnabled(false);
@@ -478,7 +489,7 @@ modoNuevoDesdeMs = Date.now();
   renderContexto();
 })();
 
-/* ===== DEBUG BANNER ULTRA-VISIBLE ===== */
+// ========== DEBUG BANNER ULTRA-VISIBLE ==========
 (function dbgBanner(){
   function ensure(){
     let host = document.getElementById('debugDoc');
