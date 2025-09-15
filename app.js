@@ -1,6 +1,10 @@
 // ===== app.js =====
-// Sincroniza en tiempo real, adopta objetivo al recargar, NO revive objetivos viejos al cambiar combo,
-// parciales con arrayUnion (sin pisadas) y reset con session++.
+// - Guarda/restaura Sabor/Formato/Turno en localStorage (para que el refresh
+//   quede en el MISMO doc).
+// - Adopta el objetivo existente al recargar la página.
+// - NO revive objetivos viejos al CAMBIAR de combo (solo adopta si es nuevo).
+// - Parciales con arrayUnion (sin pisadas entre dispositivos).
+// - Reset con session++ propagado a todos.
 
 // --- Imports ---
 import { app, db } from './firebase-config.js';
@@ -52,6 +56,44 @@ const agregarParcialBtn= document.getElementById('agregarParcialBtn');
 const resetBtn         = document.getElementById('resetBtn');
 const listaParciales   = document.getElementById('listaParciales');
 const barraProgreso    = document.getElementById('barraProgreso');
+
+// --- LocalStorage (para mantener el combo tras refresh) ---
+const LS_KEYS = {
+  sabor:   'prod.sabor',
+  formato: 'prod.formato',
+  turno:   'prod.turno',
+};
+
+function saveSelectors(){
+  try {
+    localStorage.setItem(LS_KEYS.sabor,   getText(saborSelect));
+    localStorage.setItem(LS_KEYS.formato, getText(formatoSelect));
+    localStorage.setItem(LS_KEYS.turno,   getText(turnoSelect));
+  } catch {}
+}
+
+function restoreSelectors(){
+  try {
+    const s  = localStorage.getItem(LS_KEYS.sabor);
+    const f  = localStorage.getItem(LS_KEYS.formato);
+    const t  = localStorage.getItem(LS_KEYS.turno);
+    if (s) selectByText(saborSelect, s);
+    if (f) selectByText(formatoSelect, f);
+    if (t) selectByText(turnoSelect, t);
+  } catch {}
+}
+
+function selectByText(selectEl, text){
+  if (!selectEl || !text) return;
+  const norm = v => String(v).trim().toLowerCase();
+  const want = norm(text);
+  for (let i=0;i<selectEl.options.length;i++){
+    if (norm(selectEl.options[i].text) === want || norm(selectEl.options[i].value) === want){
+      selectEl.selectedIndex = i;
+      break;
+    }
+  }
+}
 
 // --- Helpers ---
 const getText = (sel)=> sel?.options?.[sel.selectedIndex]?.text?.trim() || sel?.value || '';
@@ -195,6 +237,9 @@ function render(){
   barraProgreso.style.width = `${pct}%`;
   barraProgreso.textContent = pct ? `${pct}%` : '';
   barraProgreso.style.background = pct<30 ? '#dc3545' : (pct<70 ? '#ffc107' : '#28a745');
+
+  // Guardar combo actual cada vez que pintamos (por si cambió)
+  saveSelectors();
 }
 
 // --- Acciones ---
@@ -278,6 +323,8 @@ resetBtn.addEventListener('click', async ()=>{
     modoNuevoDesdeMs = Date.now();
     ultimaAccionFueCambioCombo = true;
 
+    saveSelectors(); // guardamos el combo elegido
+
     if (unsubscribe){ unsubscribe(); unsubscribe=null; }
     await subscribe();
   });
@@ -286,6 +333,10 @@ resetBtn.addEventListener('click', async ()=>{
 // --- Init ---
 (async ()=>{
   setEstado('Conectando…');
+
+  // Restaurar combo ANTES de enganchar (clave para que no “cambie de doc” al refrescar)
+  restoreSelectors();
+
   await initAuth();
   await subscribe();
 })();
