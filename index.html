@@ -4,22 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Control de Producción - Llenadora</title>
-<!-- Favicons (MISMO DIRECTORIO) -->
-<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="./favicon-16.png">
 
-<!-- iOS -->
-<link rel="apple-touch-icon" href="./apple-touch-icon-180.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Producción">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <!-- Favicons -->
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="./favicon-16.png">
 
-<!-- Colores UI -->
-<meta name="theme-color" content="#1362df">
+  <!-- iOS -->
+  <link rel="apple-touch-icon" href="./apple-touch-icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Producción">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
-<!-- Manifest (PWA) -->
-<link rel="manifest" href="./manifest.webmanifest" type="application/manifest+json">
+  <!-- Color UI -->
+  <meta name="theme-color" content="#1362df">
 
+  <!-- Manifest -->
+  <link rel="manifest" href="./manifest.webmanifest" type="application/manifest+json">
 
   <link rel="stylesheet" href="estilos.css">
 </head>
@@ -63,10 +63,10 @@
   <input type="number" id="parcialInput" min="1" style="display:none;" />
   <button id="agregarParcialBtn" style="display:none;">Agregar Parcial</button>
 
-  <!-- Contexto actual (visible solo cuando hay objetivo) -->
+  <!-- Contexto actual -->
   <div id="contexto" class="contexto" style="display:none;">
-  <span class="chip chip--sabor"   id="ctxSabor"></span>
-  <span class="chip chip--formato" id="ctxFormato"></span>
+    <span class="chip chip--sabor"   id="ctxSabor"></span>
+    <span class="chip chip--formato" id="ctxFormato"></span>
   </div>
 
   <div class="resumen" id="resumen" style="display:none;">
@@ -78,38 +78,43 @@
     <ul id="listaParciales"></ul>
 
     <div class="barra-externa">
-    <div class="barra-interna" id="barraProgreso"></div>
+      <div class="barra-interna" id="barraProgreso"></div>
     </div>
 
     <button id="resetBtn" style="margin-top:1rem;">Reiniciar Producción</button>
   </div>
 
-  <!-- App -->
- <script type="module" src="firebase-config.js?v=20250915b"></script>
-<script type="module" src="app.js?v=20250915b"></script>
-
+  <!-- Kill-switch: abrir una vez con ?reset=1 para limpiar SW/caché por completo -->
   <script>
-(async function killSWOnce(){
-  const url = new URL(location.href);
-  if (url.searchParams.get('reset') === '1') {
-    try {
-      if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map(r => r.unregister()));
-      }
-      if (window.caches) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map(k => caches.delete(k)));
-      }
-      alert('Cache y Service Worker eliminados. Se recarga limpio.');
-    } catch (e) {}
-    url.searchParams.delete('reset');
-    location.replace(url.toString());
-  }
-})();
-</script>
+  (async function killSWOnce(){
+    const url = new URL(location.href);
+    if (url.searchParams.get('reset') === '1') {
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.unregister()));
+        }
+        if (window.caches) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(k => caches.delete(k)));
+        }
+        alert('Cache y Service Worker eliminados. Se recarga limpio.');
+      } catch (e) {}
+      url.searchParams.delete('reset');
+      location.replace(url.toString());
+    }
+  })();
+  </script>
 
+  <!-- Registrar SW SOLO en GitHub Pages (evita problemas al testear con Live Server) -->
+  <script>
+    if ("serviceWorker" in navigator && location.hostname.endsWith("github.io")) {
+      navigator.serviceWorker.register("./sw.js").catch(console.error);
+    }
+  </script>
 
-
+  <!-- App (cache-busting de módulos) -->
+  <script type="module" src="firebase-config.js?v=20250915f"></script>
+  <script type="module" src="app.js?v=20250915f"></script>
 </body>
 </html>

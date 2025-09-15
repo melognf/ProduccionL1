@@ -1,5 +1,5 @@
-// sw.js — Produccion L1 (network-first para HTML y app.js/firebase-config.js)
-const CACHE = "produccionl1-v7"; // 👈 cambialo cuando subas una nueva versión
+// sw.js — Producción L1 (network-first para HTML y scripts del mismo origen)
+const CACHE = "produccionl1-v10";
 
 const PRECACHE = [
   "./",
@@ -18,9 +18,9 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
@@ -32,18 +32,20 @@ async function putCache(req, resp) {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
-  const isHTML = request.mode === "navigate" || request.destination === "document";
-  const isCoreJS = url.pathname.endsWith("/app.js") || url.pathname.endsWith("/firebase-config.js");
 
-  // Network-first para HTML y JS core: siempre intenta bajar lo último
-  if (isHTML || isCoreJS) {
+  // Solo MISMO ORIGEN (deja CDNs como gstatic sin tocar)
+  if (url.origin !== location.origin) return;
+
+  const isHTML   = request.mode === "navigate" || request.destination === "document";
+  const isScript = request.destination === "script";
+
+  if (isHTML || isScript) {
     event.respondWith(
       fetch(request).then((r) => putCache(request, r)).catch(() => caches.match(request))
     );
     return;
   }
 
-  // Resto: cache-first con revalidación
   event.respondWith(
     caches.match(request).then((cached) => {
       const fetchPromise = fetch(request).then((r) => putCache(request, r)).catch(() => cached);
