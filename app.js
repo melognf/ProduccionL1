@@ -1,4 +1,4 @@
-// app.js — Producción L1 (Tiempo real con Firestore, server-first y reset con session)
+// app.js — Producción L1 (server-first, session++, y "modo nuevo objetivo")
 
 import { app, db } from "./firebase-config.js";
 import {
@@ -24,9 +24,9 @@ let unsubscribe = null;
 let authed = false;
 let lastSnap = { parciales: {}, cumplimientoObjetivo: 0 };
 let session = 1;
-// Evita que se muestre automáticamente un objetivo previo al cambiar de sabor/formato
-let preferirModoNuevoObjetivo = false;
 
+// 👇 NUEVO: evita precargar objetivo previo al cambiar de sabor/formato/turno
+let preferirModoNuevoObjetivo = false;
 
 /* ===== Refs DOM ===== */
 const objetivoLabel      = document.querySelector('label[for="objetivo"]');
@@ -113,7 +113,7 @@ function mostrarObjetivoControls(mostrar){
 }
 function mostrarControlesProduccion(mostrar){
   if (parcialInput) parcialInput.style.display = mostrar ? 'block' : 'none';
-  if (agregarParcialBtn) agregarParcialBtn.style.display = mostrar ? 'block' : 'none';
+  if (agregarParcialBtn)  agregarParcialBtn.style.display = mostrar ? 'block' : 'none';
   if (parcialLabel) parcialLabel.style.display = mostrar ? 'block' : 'none';
 }
 
@@ -224,18 +224,17 @@ function escucharDocumentoActual(){
       objetivo = Number(lastSnap.objetivo || 0);
       inicioProduccion = lastSnap.inicio || null;
 
-      // Si estamos en "modo nuevo objetivo", NO precargamos el valor del doc
-let tieneObjetivo = objetivo > 0;
-if (preferirModoNuevoObjetivo) {
-  if (objetivoInput) objetivoInput.value = '';   // no prellenar
-  mostrarObjetivoControls(true);
-  mostrarControlesProduccion(false);
-} else {
-  if (objetivoInput) objetivoInput.value = tieneObjetivo ? objetivo : '';
-  mostrarObjetivoControls(!tieneObjetivo);
-  mostrarControlesProduccion(tieneObjetivo);
-}
-
+      // 👇 RESPETA el "modo nuevo objetivo" para no prellenar
+      let tieneObjetivo = objetivo > 0;
+      if (preferirModoNuevoObjetivo) {
+        if (objetivoInput) objetivoInput.value = '';
+        mostrarObjetivoControls(true);
+        mostrarControlesProduccion(false);
+      } else {
+        if (objetivoInput) objetivoInput.value = tieneObjetivo ? objetivo : '';
+        mostrarObjetivoControls(!tieneObjetivo);
+        mostrarControlesProduccion(tieneObjetivo);
+      }
 
       actualizarResumen();
       renderContexto();
@@ -249,7 +248,7 @@ if (preferirModoNuevoObjetivo) {
 /* ===== Render ===== */
 function renderContexto(){
   if (!contexto || !ctxSabor || !ctxFormato) return;
-  if (objetivo > 0){
+  if (objetivo > 0 && !preferirModoNuevoObjetivo){
     ctxSabor.textContent   = `Sabor: ${getSelectedText(saborSelect)}`;
     ctxFormato.textContent = `Formato: ${getSelectedText(formatoSelect)}`;
     contexto.style.display = 'flex';
@@ -292,7 +291,7 @@ function actualizarResumen(){
     });
   }
 
-  if (resumenDiv) resumenDiv.style.display = (objetivo > 0) ? 'block' : 'none';
+  if (resumenDiv) resumenDiv.style.display = (objetivo > 0 && !preferirModoNuevoObjetivo) ? 'block' : 'none';
 
   // progreso global
   ensureProdTitle();
@@ -328,7 +327,9 @@ async function guardarObjetivoHandler(){
       parciales: lastSnap.parciales || {},
       updatedAt: serverTimestamp()     // marca actualización
     }, { merge: true });
-preferirModoNuevoObjetivo = false;
+
+    // 👇 al confirmar objetivo, salimos del modo nuevo
+    preferirModoNuevoObjetivo = false;
 
     mostrarObjetivoControls(false);
     mostrarControlesProduccion(true);
@@ -374,7 +375,7 @@ async function agregarParcialHandler(){
 function onSelectorChange(){
   actualizarColorFormato();
 
-  // 👉 Al cambiar de sabor/formato/turno, entramos en "modo nuevo objetivo"
+  // 👇 NUEVO: al cambiar selector, preparamos "nuevo objetivo"
   preferirModoNuevoObjetivo = true;
 
   // Cortar listener actual
@@ -386,12 +387,11 @@ function onSelectorChange(){
     renderContexto();
 
     // Mostrar UI de carga de objetivo, no producción
-    if (objetivoInput) objetivoInput.value = '';   // no precargar
+    if (objetivoInput) objetivoInput.value = '';
     mostrarObjetivoControls(true);
     mostrarControlesProduccion(false);
   });
 }
-
 if (saborSelect)   saborSelect.addEventListener('change', onSelectorChange);
 if (formatoSelect) formatoSelect.addEventListener('change', onSelectorChange);
 if (turnoSelect)   turnoSelect.addEventListener('change', onSelectorChange);
@@ -417,6 +417,9 @@ if (resetBtn) resetBtn.addEventListener('click', async ()=>{
       updatedAt: serverTimestamp()
     }, { merge: true });
 
+    // 👇 tras reset, quedamos en "nuevo objetivo"
+    preferirModoNuevoObjetivo = true;
+
     // Reenganchar con datos frescos del servidor
     if (typeof unsubscribe === 'function') { unsubscribe(); unsubscribe = null; }
     await ensureDocExistsFresh();
@@ -438,6 +441,9 @@ if (resetBtn) resetBtn.addEventListener('click', async ()=>{
 /* ===== Init ===== */
 (async function init(){
   actualizarColorFormato();
+  // arrancamos en "modo nuevo objetivo" hasta que el usuario confirme
+  preferirModoNuevoObjetivo = true;
+
   mostrarObjetivoControls(true);
   setBotonesEnabled(false);
   await initAuth();
