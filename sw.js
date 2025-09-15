@@ -1,7 +1,6 @@
-// sw.js — Produccion L1 (network-first para app y html)
-const CACHE = "produccionl1-v6"; // ← cambialo cuando subas una versión nueva
+// sw.js — Produccion L1 (network-first para HTML y app.js/firebase-config.js)
+const CACHE = "produccionl1-v7"; // 👈 cambialo cuando subas una nueva versión
 
-// Archivos estáticos que vale cachear de una (sin JS de lógica)
 const PRECACHE = [
   "./",
   "./index.html",
@@ -13,9 +12,7 @@ const PRECACHE = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(PRECACHE))
-  );
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)));
   self.skipWaiting();
 });
 
@@ -27,40 +24,29 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Helper: guarda en caché sin bloquear la respuesta
-async function putCache(request, response) {
-  try {
-    const cache = await caches.open(CACHE);
-    await cache.put(request, response.clone());
-  } catch (e) {}
-  return response;
+async function putCache(req, resp) {
+  try { const c = await caches.open(CACHE); await c.put(req, resp.clone()); } catch {}
+  return resp;
 }
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
-
-  // 1) Siempre NETWORK-FIRST para HTML y módulos clave
   const isHTML = request.mode === "navigate" || request.destination === "document";
-  const isCoreJS =
-    url.pathname.endsWith("/app.js") ||
-    url.pathname.endsWith("/firebase-config.js");
+  const isCoreJS = url.pathname.endsWith("/app.js") || url.pathname.endsWith("/firebase-config.js");
 
+  // Network-first para HTML y JS core: siempre intenta bajar lo último
   if (isHTML || isCoreJS) {
     event.respondWith(
-      fetch(request)
-        .then((resp) => putCache(request, resp))
-        .catch(() => caches.match(request))
+      fetch(request).then((r) => putCache(request, r)).catch(() => caches.match(request))
     );
     return;
   }
 
-  // 2) Resto: cache-first con revalidación
+  // Resto: cache-first con revalidación
   event.respondWith(
     caches.match(request).then((cached) => {
-      const fetchPromise = fetch(request)
-        .then((resp) => putCache(request, resp))
-        .catch(() => cached); // si falla red, devolvé lo cacheado si existe
+      const fetchPromise = fetch(request).then((r) => putCache(request, r)).catch(() => cached);
       return cached || fetchPromise;
     })
   );

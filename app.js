@@ -47,12 +47,14 @@ const getSelectedText = (sel) =>
   sel?.options?.[sel.selectedIndex]?.text?.trim() || sel?.value || '';
 
 function hoyYYYYMMDD() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth()+1).padStart(2,"0");
-  const day = String(d.getDate()).padStart(2,"0");
-  return `${y}-${m}-${day}`;
+  const fmt = new Intl.DateTimeFormat('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(new Date()).map(p => [p.type, p.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
+
 function safeIdPart(s) {
   return (s && String(s).trim()) ? String(s).replace(/[^\w-]+/g,'_') : 'ND';
 }
