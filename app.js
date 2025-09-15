@@ -10,7 +10,8 @@ import {
   getDocFromServer,   // server-first
   getDoc,             // fallback offline
   serverTimestamp,    // marcas de tiempo
-  increment           // session++
+  increment,
+   arrayUnion           // session++
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getAuth,
@@ -377,23 +378,37 @@ async function agregarParcialHandler(){
   const val = parseInt(String(parcialInput.value).replace(/\D/g, ''));
   if (!val || val <= 0) { alert('Ingresá un número válido (>0).'); return; }
 
+  // ⚠️ Ya no calculamos "nuevos" en base a lastSnap, para no pisar.
+  // Solo validamos contra el objetivo visible (opcional; puede omitirse si querés permitir > objetivo):
   const totalGlobal  = sumAllTurnos(lastSnap.parciales || {});
   const restanteGlob = Math.max((objetivo || 0) - totalGlobal, 0);
   if (val > restanteGlob) {
-    alert(`La producción parcial supera el restante global (${restanteGlob.toLocaleString('es-AR')}).`);
-    return;
+    if (!confirm(`Este parcial (${val.toLocaleString('es-AR')}) supera el restante (${restanteGlob.toLocaleString('es-AR')}). ¿Agregar igual?`)) {
+      return;
+    }
   }
 
   const ref = refActual();
   const k = turnoKey();
-  const nuevos = (lastSnap.parciales?.[k] || []).concat([{ cantidad: val, ts: Date.now() }]);
 
+  // 👇 Append atómico: no reconstruye arrays, evita pisadas entre dispositivos
+  const item = { cantidad: val, ts: Date.now() }; // (si preferís, podés usar ts: serverTimestamp())
   try {
-    await updateDoc(ref, { [`parciales.${k}`]: nuevos, updatedAt: serverTimestamp() });
+    await updateDoc(ref, {
+      [`parciales.${k}`]: arrayUnion(item),
+      updatedAt: serverTimestamp()
+    });
     parcialInput.value = '';
+
+    // (Opcional) refrescar lectura server-first para ver orden final
+    // await ensureDocExistsFresh();
   } catch (e) {
     if (e.code === 'not-found') {
-      await setDoc(ref, { parciales: { [k]: nuevos }, updatedAt: serverTimestamp() }, { merge: true });
+      // Si el doc no existe aún, lo creamos con el primer parcial
+      await setDoc(ref, {
+        parciales: { [k]: [item] },
+        updatedAt: serverTimestamp()
+      }, { merge: true });
       parcialInput.value = '';
     } else {
       console.error(e);
@@ -401,6 +416,7 @@ async function agregarParcialHandler(){
     }
   }
 }
+
 
 // ========== Listeners ==========
 function onSelectorChange(){
