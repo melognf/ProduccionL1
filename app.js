@@ -224,17 +224,27 @@ function escucharDocumentoActual(){
       objetivo = Number(lastSnap.objetivo || 0);
       inicioProduccion = lastSnap.inicio || null;
 
-      // 👇 RESPETA el "modo nuevo objetivo" para no prellenar
       let tieneObjetivo = objetivo > 0;
-      if (preferirModoNuevoObjetivo) {
-        if (objetivoInput) objetivoInput.value = '';
-        mostrarObjetivoControls(true);
-        mostrarControlesProduccion(false);
-      } else {
-        if (objetivoInput) objetivoInput.value = tieneObjetivo ? objetivo : '';
-        mostrarObjetivoControls(!tieneObjetivo);
-        mostrarControlesProduccion(tieneObjetivo);
-      }
+
+// Si estamos en “nuevo objetivo” pero llegó un objetivo desde el servidor
+// y el usuario NO escribió nada, adoptamos ese objetivo y salimos del modo.
+const vinoDeServidor = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites;
+const inputVacio = !objetivoInput || String(objetivoInput.value).trim() === '';
+
+if (preferirModoNuevoObjetivo && tieneObjetivo && vinoDeServidor && inputVacio) {
+  preferirModoNuevoObjetivo = false;           // 👈 adoptamos el objetivo remoto
+}
+
+if (preferirModoNuevoObjetivo) {
+  if (objetivoInput) objetivoInput.value = ''; // no prellenar
+  mostrarObjetivoControls(true);
+  mostrarControlesProduccion(false);
+} else {
+  if (objetivoInput) objetivoInput.value = tieneObjetivo ? objetivo : '';
+  mostrarObjetivoControls(!tieneObjetivo);
+  mostrarControlesProduccion(tieneObjetivo);
+}
+
 
       actualizarResumen();
       renderContexto();
