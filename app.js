@@ -1,4 +1,8 @@
-// ===== Imports
+// ===== app.js =====
+// Sincroniza en tiempo real, adopta objetivo al recargar, NO revive objetivos viejos al cambiar combo,
+// parciales con arrayUnion (sin pisadas) y reset con session++.
+
+// --- Imports ---
 import { app, db } from './firebase-config.js';
 import {
   doc, setDoc, updateDoc, onSnapshot,
@@ -8,7 +12,7 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-// ===== Estado
+// --- Estado ---
 let objetivo = 0;
 let inicioProduccion = null;
 let authed = false;
@@ -21,7 +25,10 @@ let session = 1;
 let preferirModoNuevoObjetivo = true;
 let modoNuevoDesdeMs = Date.now();
 
-// ===== Refs UI
+// Flag para distinguir recarga (adoptar objetivo existente) vs cambio de combo (no adoptar)
+let ultimaAccionFueCambioCombo = false;
+
+// --- Refs UI ---
 const saborSelect   = document.getElementById('sabor');
 const formatoSelect = document.getElementById('formato');
 const turnoSelect   = document.getElementById('turno');
@@ -46,7 +53,7 @@ const resetBtn         = document.getElementById('resetBtn');
 const listaParciales   = document.getElementById('listaParciales');
 const barraProgreso    = document.getElementById('barraProgreso');
 
-// ===== Helpers
+// --- Helpers ---
 const getText = (sel)=> sel?.options?.[sel.selectedIndex]?.text?.trim() || sel?.value || '';
 function BA_YYYYMMDD(){
   const fmt = new Intl.DateTimeFormat('es-AR',{ timeZone:'America/Argentina/Buenos_Aires', year:'numeric', month:'2-digit', day:'2-digit'});
@@ -63,18 +70,21 @@ function refActual(){ return doc(db, 'produccion', docId()); }
 function setEstado(t){ if (lblEstado) lblEstado.textContent = t; }
 function fmt(ts){ const d=new Date(ts),p=n=>String(n).padStart(2,'0'); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${String(d.getFullYear()).slice(-2)} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 
-// ===== Auth
+// --- Auth ---
 async function initAuth(){
   const auth = getAuth(app);
   return new Promise(res=>{
     onAuthStateChanged(auth, async user=>{
-      if (user){ authed=true; subscribe(); res(); }
-      else { try{ await signInAnonymously(auth); } catch(e){ authed=false; alert('Habilitá Anonymous en Firebase Auth'); res(); } }
+      if (user){ authed=true; await subscribe(); res(); }
+      else {
+        try{ await signInAnonymously(auth); }
+        catch(e){ authed=false; alert('Habilitá Anonymous en Firebase Auth'); res(); }
+      }
     });
   });
 }
 
-// ===== Server-first (solo lectura, NO crea doc)
+// --- Lectura server-first (NO crea el doc) ---
 async function getFreshData(){
   const ref = refActual();
   let snap;
@@ -83,51 +93,59 @@ async function getFreshData(){
   return snap?.exists() ? (snap.data() || {}) : null;
 }
 
-// ===== Suscripción
-function subscribe(){
+// --- Suscripción (adopta objetivo en recarga inicial, no al cambiar combo) ---
+async function subscribe(){
   if (!authed) return;
   if (unsubscribe) { unsubscribe(); unsubscribe=null; }
 
-  getFreshData().finally(()=>{
-    const ref = refActual();
-    unsubscribe = onSnapshot(ref, { includeMetadataChanges:true }, snap=>{
-      if (!snap.exists()){
-        // No hay doc → modo “nuevo objetivo”
-        objetivo = 0;
-        inicioProduccion = null;
-        lastSnap = { parciales:{}, updatedAt:null };
-        render();
-        return;
-      }
+  // 1) Lectura server-first previa
+  const data = await getFreshData();
 
-      const data = snap.data() || {};
-      lastSnap = data;
-      objetivo = Number(data.objetivo || 0);
-      inicioProduccion = data.inicio || null;
+  // 2) Si NO venimos de cambiar combo y ya hay objetivo guardado,
+  //    adoptamos inmediatamente (caso: refresco / carga inicial)
+  if (data && Number(data.objetivo || 0) > 0 && !ultimaAccionFueCambioCombo) {
+    preferirModoNuevoObjetivo = false;  // mostrar producción ya
+    modoNuevoDesdeMs = 0;               // ignorar filtro de "reciente" en este ciclo
+  }
+  // resetear el flag para próximos ciclos
+  ultimaAccionFueCambioCombo = false;
 
-      // --- Anti-objetivo-viejo + adopción automática de objetivo NUEVO ---
-      const vinoDeServidor = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites;
-      const inputVacio     = !objetivoInput || !objetivoInput.value.trim();
-      const updatedAtMs    = (data.updatedAt && data.updatedAt.toMillis) ? data.updatedAt.toMillis() : 0;
-      const objetivoReciente = updatedAtMs > modoNuevoDesdeMs; // solo si alguien lo fijó DESPUÉS de entrar
-
-      // Si estoy en modo nuevo, el doc tiene objetivo>0 y llegó del servidor un cambio reciente,
-      // adopto automáticamente y salgo del modo nuevo.
-      if (preferirModoNuevoObjetivo && objetivo>0 && vinoDeServidor && inputVacio && objetivoReciente){
-        preferirModoNuevoObjetivo = false;
-      }
-      // -------------------------------------------------------------------
-
+  // 3) Enganche en tiempo real
+  const ref = refActual();
+  unsubscribe = onSnapshot(ref, { includeMetadataChanges:true }, snap=>{
+    if (!snap.exists()){
+      // No hay doc → modo “nuevo objetivo”
+      objetivo = 0;
+      inicioProduccion = null;
+      lastSnap = { parciales:{}, updatedAt:null };
       render();
+      return;
+    }
 
-      if (snap.metadata.hasPendingWrites) setEstado('Enviando cambios…');
-      else if (snap.metadata.fromCache)  setEstado('Sincronizando…');
-      else                               setEstado('Conectado');
-    }, err=>{ console.error(err); setEstado('Error de conexión'); });
-  });
+    const d = snap.data() || {};
+    lastSnap = d;
+    objetivo = Number(d.objetivo || 0);
+    inicioProduccion = d.inicio || null;
+
+    // Anti-objetivo-viejo + adopción automática de objetivo NUEVO
+    const vinoDeServidor = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites;
+    const inputVacio     = !objetivoInput || !objetivoInput.value.trim();
+    const updatedAtMs    = (d.updatedAt && d.updatedAt.toMillis) ? d.updatedAt.toMillis() : 0;
+    const objetivoReciente = updatedAtMs > modoNuevoDesdeMs; // solo si alguien lo fijó DESPUÉS de entrar
+
+    if (preferirModoNuevoObjetivo && objetivo>0 && vinoDeServidor && inputVacio && objetivoReciente){
+      preferirModoNuevoObjetivo = false;
+    }
+
+    render();
+
+    if (snap.metadata.hasPendingWrites) setEstado('Enviando cambios…');
+    else if (snap.metadata.fromCache)  setEstado('Sincronizando…');
+    else                               setEstado('Conectado');
+  }, err=>{ console.error(err); setEstado('Error de conexión'); });
 }
 
-// ===== Render
+// --- Render ---
 function render(){
   const sabor=getText(saborSelect), formato=getText(formatoSelect);
 
@@ -146,7 +164,7 @@ function render(){
     objetivoInput.value = '';        // NO prellenar con viejo
   }
 
-  // Mostrar objetivo solo si está activo; si no, mostrar 0
+  // Objetivo visible
   objetivoMostrar.textContent = tieneObj ? (objetivo||0).toLocaleString('es-AR') : '0';
 
   // Parciales + resumen
@@ -179,7 +197,7 @@ function render(){
   barraProgreso.style.background = pct<30 ? '#dc3545' : (pct<70 ? '#ffc107' : '#28a745');
 }
 
-// ===== Acciones
+// --- Acciones ---
 guardarObjetivoBtn.addEventListener('click', async ()=>{
   if (!authed) return;
   const val = parseInt(String(objetivoInput.value).replace(/\D/g,''));
@@ -252,21 +270,22 @@ resetBtn.addEventListener('click', async ()=>{
   render();
 });
 
-// ===== Selectores
+// --- Selectores (cambio de combo) ---
 [saborSelect, formatoSelect, turnoSelect].forEach(sel=>{
-  sel.addEventListener('change', ()=>{
+  sel.addEventListener('change', async ()=>{
     // nuevo combo → “nuevo objetivo” hasta que alguien lo fije
     preferirModoNuevoObjetivo = true;
     modoNuevoDesdeMs = Date.now();
+    ultimaAccionFueCambioCombo = true;
 
     if (unsubscribe){ unsubscribe(); unsubscribe=null; }
-    subscribe();
+    await subscribe();
   });
 });
 
-// ===== Init
+// --- Init ---
 (async ()=>{
   setEstado('Conectando…');
   await initAuth();
-  subscribe();
+  await subscribe();
 })();
