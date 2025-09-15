@@ -1,6 +1,6 @@
 // sw.js
 // sw.js — cache simple para PWA
-const CACHE_NAME = "prod-app-v1"; // si cambiás archivos, subí a v2, v3...
+const CACHE_NAME = "prod-app-v2"; // si cambiás archivos, subí a v2, v3...
 const ASSETS = [
   "./",
   "./index.html",
