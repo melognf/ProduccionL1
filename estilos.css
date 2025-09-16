@@ -1,33 +1,329 @@
-:root{ --azul:#0b82ff; --gris:#f4f6f8; --ok:#28a745; --warn:#ffc107; --bad:#dc3545; }
-*{ box-sizing:border-box; font-family:system-ui,Segoe UI,Roboto,Arial; }
-body{ margin:0; background:#fff; color:#222; }
-.wrap{ max-width:900px; margin:28px auto; padding:0 16px; }
-h1{ text-align:center; color:#1170d6; margin:0 0 16px; }
-.grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; align-items:end; margin-bottom:12px; }
-label{ display:flex; flex-direction:column; gap:6px; font-weight:600; }
-select, input{ padding:10px 12px; border:1px solid #cfd6dd; border-radius:8px; background:#fff; }
-.estado{ grid-column:1 / -1; text-align:right; color:#666; font-size:14px; }
+/* ===== estilos.css — UI limpia, mobile-first, bordes marcados ===== */
 
-.btn-prim, .btn-sec, .btn-warn{
-  padding:12px 16px; border:none; border-radius:10px; cursor:pointer; font-weight:700;
+:root{
+  --bg:#f6f8fb;
+  --card:#ffffff;
+  --ink:#1e293b;
+  --muted:#F40009;
+  --brand:#1170d6;
+  --brand-600:#0b5fc0;
+  --ok:#18b566;
+  --warn:#f5b301;
+  --bad:#e3342f;
+  --ring:#9cc4ff;
+  --shadow: 0 8px 30px rgba(0,0,0,.06);
+
+  /* Bordes visibles */
+  --bd:#8ea6c4;
+  --bd-strong:#6b87a8;
+  --bd-soft:#e9f0f8;
+  --radius: 12px;
 }
-.btn-prim{ background:var(--azul); color:#fff; width:100%; margin-top:10px; }
-.btn-sec{ background:#e8f0ff; color:#0b3c8c; }
-.btn-warn{ background:#ffe6e6; color:#a20000; margin-left:8px; }
 
-.cards{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:16px 0; }
-.card{ background:var(--gris); border-radius:12px; padding:14px; text-align:center; }
-.card small{ color:#444; display:block; }
-.card strong{ font-size:22px; }
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  margin:0;
+  color:var(--ink);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #eaf1ff 0%, transparent 60%),
+    radial-gradient(900px 500px at 110% 0%, #f0fff5 0%, transparent 55%),
+    var(--bg);
+  font: 15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
 
-.progress{ position:relative; height:22px; background:#edf2f7; border-radius:999px; overflow:hidden; }
-#barraProgreso{ position:absolute; inset:0; width:0%; background:var(--ok); color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; }
+/* ===== contenedor ===== */
+.wrap{
+  max-width: 960px;
+  margin: 28px auto 40px;
+  padding: 0 16px;
+}
+h1{
+  margin: 0 0 18px;
+  text-align:center;
+  letter-spacing:.2px;
+  font-weight: 800;
+  color: var(--brand);
+  text-shadow: 0 1px 0 #fff;
+}
 
-.parcial{ display:flex; align-items:center; gap:10px; margin:16px 0; }
-#listaParciales{ list-style:none; padding:0; margin:0; }
-#listaParciales li{ padding:8px 10px; border-bottom:1px solid #eee; }
+/* ===== panel superior (filtros) ===== */
+/* 2 columnas por defecto (celular) */
+.grid{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+label{ font-weight: 700; font-size: 13px; color: var(--muted); }
 
-@media (max-width:760px){
-  .grid{ grid-template-columns:1fr 1fr; }
-  .cards{ grid-template-columns:1fr 1fr; }
+.grid > label{
+  display:flex;
+  flex-direction:column;
+  gap:.35rem;
+  background:#F40009;
+  border: 2px solid var(--bd);
+  border-radius: var(--radius);
+  padding:.6rem .7rem;
+}
+
+/* Controles */
+select, input{
+  width:100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 2px solid var(--bd);
+  border-radius: 10px;
+  background:#fff;
+  color: var(--ink);
+  transition: border .15s, box-shadow .15s, transform .02s;
+  outline: none;
+}
+select:focus, input:focus{
+  border-color: var(--bd-strong);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+select:active, input:active{ transform: translateY(0.5px); }
+
+/* Estado (pill a todo el ancho) */
+.estado{
+  grid-column: 1 / -1;
+  text-align:center;
+  color:#2b425e;
+  font-size: 13px;
+  background: var(--bd-soft);
+  border: 2px solid var(--bd);
+  border-radius: 999px;
+  padding:.4rem .8rem;
+}
+
+/* ===== panel objetivo ===== */
+#panelObjetivo{
+  background: var(--card);
+  border: 2px solid var(--bd);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.btn-prim, .btn-sec, .btn-warn{
+  border: 2px solid var(--bd);
+  border-radius: 12px;
+  font-weight: 800;
+  cursor:pointer;
+  padding: 12px 16px;
+  transition: transform .02s, filter .15s, box-shadow .15s, border-color .15s;
+}
+.btn-prim{
+  width:100%;
+  margin-top: 12px;
+  background: linear-gradient(180deg, #2a8ef7, var(--brand));
+  color:#fff;
+  box-shadow: 0 6px 18px rgba(17,112,214,.25);
+}
+.btn-prim:hover{ filter: brightness(1.03); border-color: var(--bd-strong); }
+.btn-prim:active{ transform: translateY(1px); }
+
+.btn-sec{ background:#ecf3ff; color:#0b3c8c; }
+.btn-sec:hover{ filter: brightness(1.02); border-color: var(--bd-strong); }
+
+.btn-warn{ background:#ffe9ea; color:#9f1d1d; }
+.btn-warn:hover{ filter: brightness(1.03); border-color: var(--bd-strong); }
+
+/* ===== resumen / tarjetas ===== */
+#resumen{
+  margin-top: 16px;
+  background: var(--card);
+  border: 2px solid var(--bd);
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+
+/* Contexto (Sabor / Formato) */
+.ctx{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  background: var(--bd-soft);
+  border:2px solid var(--bd);
+  color:#2b425e;
+  padding:8px 10px;
+  border-radius:10px;
+  margin-bottom: 12px;
+  font-weight:700;
+  font-size: 13px;
+}
+
+/* KPIs — 2 columnas en móvil, 4 en >=640px */
+.cards{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 12px;
+  margin: 12px 0 16px;
+}
+.card{
+  background:#fff;
+  border: 2px solid var(--bd);
+  border-radius: 14px;
+  text-align:center;
+  padding: 14px 10px;
+}
+.card small{ display:block; color: #3c4c61; font-weight:700; font-size:12px; }
+.card strong{ display:block; margin-top:6px; font-size: 24px; letter-spacing:.2px; }
+
+/* ===== barra de progreso ===== */
+.progress{
+  position:relative;
+  height: 22px;
+  border-radius:999px;
+  overflow:hidden;
+  background: #eef3f9;
+  border: 2px solid var(--bd);
+  margin-bottom: 14px;
+  padding: 2px; /* para que no tape el relleno */
+}
+#barraProgreso{
+  height:100%;
+  width:0%;
+  border-radius:999px;
+  background: linear-gradient(90deg, #3ddc97, #18b566);
+  color:#fff;
+  font-size:12px;
+  font-weight:800;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-shadow: 0 1px 0 rgba(0,0,0,.2);
+  transition: width .25s ease;
+}
+
+/* ===== carga de parciales ===== */
+.parcial{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:10px;
+  margin: 6px 0 12px;
+}
+#parcialInput{ max-width: 220px; }
+#listaParciales{ list-style:none; margin:0; padding:0; }
+#listaParciales li{
+  padding: 10px 12px;
+  border:2px solid var(--bd);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  background:#fff;
+}
+
+/* ===== accesibilidad focus ===== */
+select, input, button{ outline: none; }
+select:focus, input:focus, button:focus{
+  border-color: var(--bd-strong);
+  box-shadow: 0 0 0 3px rgba(17,112,214,.18);
+}
+
+/* ===== responsive ===== */
+/* Muy chico: 1 columna */
+@media (max-width: 360px){
+  .grid{ grid-template-columns: 1fr; }
+  .cards{ grid-template-columns: 1fr; }
+}
+
+/* Tablet/desktop: 4 columnas */
+@media (min-width: 640px){
+  .grid{  grid-template-columns: repeat(4, minmax(0,1fr)); }
+  .cards{ grid-template-columns: repeat(4, minmax(0,1fr)); }
+}
+
+/* ===== Colores para los BVO (tarjetas de KPIs) ===== */
+:root{
+  --bvo-objetivo-bg:#eaf2ff;   --bvo-objetivo-bd:#8db4ff;
+  --bvo-acumulado-bg:#e9fff4;  --bvo-acumulado-bd:#88e0b4;
+  --bvo-faltante-bg:#fff0f0;   --bvo-faltante-bd:#f1a5a5;
+  --bvo-inicio-bg:#f4f7fb;     --bvo-inicio-bd:#b9c7db;
+}
+
+/* 1: Objetivo  | 2: Acumulado | 3: Faltante | 4: Inicio */
+.cards .card:nth-child(1){
+  background: var(--bvo-objetivo-bg);
+  border-color: var(--bvo-objetivo-bd);
+}
+.cards .card:nth-child(2){
+  background: var(--bvo-acumulado-bg);
+  border-color: var(--bvo-acumulado-bd);
+}
+.cards .card:nth-child(3){
+  background: var(--bvo-faltante-bg);
+  border-color: var(--bvo-faltante-bd);
+}
+.cards .card:nth-child(4){
+  background: var(--bvo-inicio-bg);
+  border-color: var(--bvo-inicio-bd);
+}
+
+/* Tip: un poco más de contraste en el título dentro de cada card */
+.cards .card:nth-child(1) small{ color:#234a8a; }
+.cards .card:nth-child(2) small{ color:#0f5b3a; }
+.cards .card:nth-child(3) small{ color:#7a2e2e; }
+.cards .card:nth-child(4) small{ color:#34465f; }
+
+/* Solo el texto del label (no el select) para Sabor, Formato, Turno y Operador */
+.grid > label:has(> #sabor),
+.grid > label:has(> #formato),
+.grid > label:has(> #turno),
+.grid > label:has(> #operador){
+  color: #ffffff;                 /* color de la fuente del título/label */
+  text-shadow: 0 1px 0 rgba(0,0,0,.25); /* opcional para contraste */
+}
+
+/* Mantener los <select> con texto oscuro aunque el label sea blanco */
+.grid > label:has(> #sabor)    > select,
+.grid > label:has(> #formato)  > select,
+.grid > label:has(> #turno)    > select,
+.grid > label:has(> #operador) > select{
+  color: var(--ink);
+  background: #fff;
+}
+
+/* ==== Selects en paleta gris (neutra y legible) ==== */
+:root{
+  /* tonos base */
+  --sel-bg:   #f3f4f6;  /* gris claro del control */
+  --sel-ink:  #111827;  /* texto */
+  --sel-bd:   #c7ced9;  /* borde */
+  --sel-bg-2: #eef0f3;  /* variación sutil */
+  --sel-bg-3: #eceff4;
+  --sel-bg-4: #e9edf3;
+}
+
+/* estilo base + flecha SVG */
+.grid > label > select{
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.2rem;
+  background-repeat: no-repeat;
+  background-position: right .7rem center;
+  background-size: 1rem;
+  background-image:
+    url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3e%3cpath fill='%231e293b' d='M5.23 7.21a1 1 0 0 1 1.41 0L10 10.57l3.36-3.36a1 1 0 1 1 1.41 1.41l-4.07 4.07a1 1 0 0 1-1.41 0L5.23 8.62a1 1 0 0 1 0-1.41z'/%3e%3c/svg%3e");
+  background-color: var(--sel-bg);
+  color: var(--sel-ink);
+  border-color: var(--sel-bd);
+  border-width: 2px;
+}
+
+/* variaciones suaves por campo (opcional) */
+.grid > label:has(> #sabor)    > select{ background-color: var(--sel-bg);   }
+.grid > label:has(> #formato)  > select{ background-color: var(--sel-bg-2); }
+.grid > label:has(> #turno)    > select{ background-color: var(--sel-bg-3); }
+.grid > label:has(> #operador) > select{ background-color: var(--sel-bg-4); }
+
+/* focus/hover coherente en gris */
+.grid > label > select:hover{
+  border-color: #aab5c6;
+}
+.grid > label > select:focus{
+  border-color: #7f8ba1;
+  box-shadow: 0 0 0 3px rgba(17,112,214,.14); /* aro suave azulado */
 }
