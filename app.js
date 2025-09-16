@@ -1,10 +1,9 @@
 // ===== app.js =====
-// - Guarda/restaura Sabor/Formato/Turno en localStorage (para que el refresh
-//   quede en el MISMO doc).
-// - Adopta el objetivo existente al recargar la página.
-// - NO revive objetivos viejos al CAMBIAR de combo (solo adopta si es nuevo).
+// - Arranca en blanco (no restaura combo al inicio).
+// - No lee ni se suscribe hasta que Sabor+Formato+Turno estén elegidos.
+// - DocID incluye el TURNO para evitar pisadas entre combos.
+// - Mantiene tu lógica de "nuevo objetivo" y session++ en reset.
 // - Parciales con arrayUnion (sin pisadas entre dispositivos).
-// - Reset con session++ propagado a todos.
 
 // --- Imports ---
 import { app, db } from './firebase-config.js';
@@ -25,11 +24,10 @@ let lastSnap = { parciales:{}, updatedAt:null };
 let session = 1;
 
 // “Modo nuevo objetivo” para NO revivir objetivos viejos al cambiar combo.
-// Y timestamp desde que entramos a ese modo, para adoptar solo cambios nuevos.
 let preferirModoNuevoObjetivo = true;
 let modoNuevoDesdeMs = Date.now();
 
-// Flag para distinguir recarga (adoptar objetivo existente) vs cambio de combo (no adoptar)
+// Flag para distinguir recarga vs cambio de combo (lo mantenemos por compatibilidad)
 let ultimaAccionFueCambioCombo = false;
 
 // --- Refs UI ---
@@ -57,14 +55,18 @@ const resetBtn         = document.getElementById('resetBtn');
 const listaParciales   = document.getElementById('listaParciales');
 const barraProgreso    = document.getElementById('barraProgreso');
 
-// --- LocalStorage (para mantener el combo tras refresh) ---
+// --- LocalStorage (sólo si hay combo completo) ---
 const LS_KEYS = {
   sabor:   'prod.sabor',
   formato: 'prod.formato',
   turno:   'prod.turno',
 };
 
+function comboCompleto(){
+  return !!(getText(saborSelect) && getText(formatoSelect) && getText(turnoSelect));
+}
 function saveSelectors(){
+  if (!comboCompleto()) return; // guardamos sólo combos válidos
   try {
     localStorage.setItem(LS_KEYS.sabor,   getText(saborSelect));
     localStorage.setItem(LS_KEYS.formato, getText(formatoSelect));
@@ -72,6 +74,8 @@ function saveSelectors(){
   } catch {}
 }
 
+// NOTA: NO restauramos al inicio (pedido tuyo). Si querés restaurar manualmente,
+// llamá a esta función en algún botón propio.
 function restoreSelectors(){
   try {
     const s  = localStorage.getItem(LS_KEYS.sabor);
@@ -107,8 +111,13 @@ function turnoKey(){
   const t = getText(turnoSelect); const m = t.match(/([ABCD])$/i);
   return m ? m[1].toUpperCase() : safe(t);
 }
-function docId(){ return `${BA_YYYYMMDD()}__${safe(getText(saborSelect))}_${safe(getText(formatoSelect))}`; }
+
+// ⚠️ CAMBIO CLAVE: ahora el doc incluye el TURNO → evita mezclas entre turnos
+function docId(){
+  return `${BA_YYYYMMDD()}__${safe(getText(saborSelect))}_${safe(getText(formatoSelect))}__${turnoKey()}`;
+}
 function refActual(){ return doc(db, 'produccion', docId()); }
+
 function setEstado(t){ if (lblEstado) lblEstado.textContent = t; }
 function fmt(ts){ const d=new Date(ts),p=n=>String(n).padStart(2,'0'); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${String(d.getFullYear()).slice(-2)} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 
@@ -135,21 +144,30 @@ async function getFreshData(){
   return snap?.exists() ? (snap.data() || {}) : null;
 }
 
-// --- Suscripción (adopta objetivo en recarga inicial, no al cambiar combo) ---
+// --- Suscripción ---
 async function subscribe(){
   if (!authed) return;
+
+  // ⛔ No arrancar si no hay combo completo
+  if (!comboCompleto()){
+    // limpiar estado visual para evitar “revivir” datos
+    objetivo = 0;
+    inicioProduccion = null;
+    lastSnap = { parciales:{}, updatedAt:null };
+    render();
+    return;
+  }
+
   if (unsubscribe) { unsubscribe(); unsubscribe=null; }
 
   // 1) Lectura server-first previa
   const data = await getFreshData();
 
-  // 2) Si NO venimos de cambiar combo y ya hay objetivo guardado,
-  //    adoptamos inmediatamente (caso: refresco / carga inicial)
+  // 2) Adopción sólo en refresco inicial (no en cambio de combo)
   if (data && Number(data.objetivo || 0) > 0 && !ultimaAccionFueCambioCombo) {
     preferirModoNuevoObjetivo = false;  // mostrar producción ya
-    modoNuevoDesdeMs = 0;               // ignorar filtro de "reciente" en este ciclo
+    modoNuevoDesdeMs = 0;               // ignorar filtro “reciente” en este ciclo
   }
-  // resetear el flag para próximos ciclos
   ultimaAccionFueCambioCombo = false;
 
   // 3) Enganche en tiempo real
@@ -173,7 +191,7 @@ async function subscribe(){
     const vinoDeServidor = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites;
     const inputVacio     = !objetivoInput || !objetivoInput.value.trim();
     const updatedAtMs    = (d.updatedAt && d.updatedAt.toMillis) ? d.updatedAt.toMillis() : 0;
-    const objetivoReciente = updatedAtMs > modoNuevoDesdeMs; // solo si alguien lo fijó DESPUÉS de entrar
+    const objetivoReciente = updatedAtMs > modoNuevoDesdeMs;
 
     if (preferirModoNuevoObjetivo && objetivo>0 && vinoDeServidor && inputVacio && objetivoReciente){
       preferirModoNuevoObjetivo = false;
@@ -203,7 +221,7 @@ function render(){
     document.getElementById('contexto').style.display = 'flex';
   } else {
     document.getElementById('contexto').style.display = 'none';
-    objetivoInput.value = '';        // NO prellenar con viejo
+    if (objetivoInput) objetivoInput.value = ''; // NO prellenar con viejo
   }
 
   // Objetivo visible
@@ -238,13 +256,15 @@ function render(){
   barraProgreso.textContent = pct ? `${pct}%` : '';
   barraProgreso.style.background = pct<30 ? '#dc3545' : (pct<70 ? '#ffc107' : '#28a745');
 
-  // Guardar combo actual cada vez que pintamos (por si cambió)
+  // Guardar combo actual sólo si es válido
   saveSelectors();
 }
 
 // --- Acciones ---
 guardarObjetivoBtn.addEventListener('click', async ()=>{
   if (!authed) return;
+  if (!comboCompleto()){ alert('Elegí Sabor, Formato y Turno.'); return; }
+
   const val = parseInt(String(objetivoInput.value).replace(/\D/g,''));
   if (!val || val<=0){ alert('Ingresá un objetivo válido (>0)'); return; }
 
@@ -255,7 +275,7 @@ guardarObjetivoBtn.addEventListener('click', async ()=>{
   await setDoc(ref, {
     objetivo,
     inicio: inicioProduccion,
-    updatedAt: serverTimestamp(),     // CLAVE para adopción
+    updatedAt: serverTimestamp(),
     session: session || 1
   }, { merge:true });
 
@@ -266,6 +286,8 @@ guardarObjetivoBtn.addEventListener('click', async ()=>{
 
 agregarParcialBtn.addEventListener('click', async ()=>{
   if (!authed) return;
+  if (!comboCompleto()){ alert('Elegí Sabor, Formato y Turno.'); return; }
+
   const val = parseInt(String(parcialInput.value).replace(/\D/g,''));
   if (!val || val<=0){ alert('Ingresá un número válido (>0)'); return; }
 
@@ -297,6 +319,7 @@ agregarParcialBtn.addEventListener('click', async ()=>{
 
 resetBtn.addEventListener('click', async ()=>{
   if (!authed) return;
+  if (!comboCompleto()){ alert('Elegí Sabor, Formato y Turno.'); return; }
   if (!confirm('¿Reiniciar objetivo y parciales de este combo?')) return;
 
   const ref = refActual();
@@ -323,7 +346,18 @@ resetBtn.addEventListener('click', async ()=>{
     modoNuevoDesdeMs = Date.now();
     ultimaAccionFueCambioCombo = true;
 
-    saveSelectors(); // guardamos el combo elegido
+    // guardamos el combo sólo si está completo
+    saveSelectors();
+
+    // si no hay combo completo, cortamos suscripción y limpiamos UI
+    if (!comboCompleto()){
+      if (unsubscribe){ unsubscribe(); unsubscribe=null; }
+      objetivo = 0;
+      inicioProduccion = null;
+      lastSnap = { parciales:{}, updatedAt:null };
+      render();
+      return;
+    }
 
     if (unsubscribe){ unsubscribe(); unsubscribe=null; }
     await subscribe();
@@ -334,9 +368,10 @@ resetBtn.addEventListener('click', async ()=>{
 (async ()=>{
   setEstado('Conectando…');
 
-  // Restaurar combo ANTES de enganchar (clave para que no “cambie de doc” al refrescar)
-  restoreSelectors();
+  // ⚠️ NO restauramos selección al inicio (arranque en blanco).
+  // Si en alguna prueba querés restaurar manualmente: descomentá
+  // restoreSelectors();
 
   await initAuth();
-  await subscribe();
+  await subscribe(); // sólo se engancha si el combo está completo
 })();
