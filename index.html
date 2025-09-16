@@ -15,16 +15,20 @@
     <section class="grid">
       <label>Sabor
         <select id="sabor">
+          <option value="" selected disabled>— Elegí un sabor —</option>
           <option>Powerade MZN</option>
           <option>Powerade MB</option>
           <option>Powerade FT</option>
           <option>Cepita NJA</option>
           <option>Cepita DZN</option>
+          <option>Cepita FM</option>
         </select>
       </label>
 
       <label>Formato
         <select id="formato">
+          <option value="" selected disabled>— Elegí un formato —</option>
+          <option>300 ml</option>
           <option>500 ml</option>
           <option>995 ml</option>
           <option>1500 ml</option>
@@ -33,6 +37,7 @@
 
       <label>Turno
         <select id="turno">
+          <option value="" selected disabled>— Elegí turno —</option>
           <option>Turno A</option>
           <option>Turno B</option>
           <option>Turno C</option>
@@ -42,9 +47,11 @@
 
       <label>Operador
         <select id="operador">
+          <option value="" selected disabled>— Elegí operador —</option>
           <option>Operador 1</option>
           <option>Operador 2</option>
           <option>Operador 3</option>
+          <option>Operador 4</option>
         </select>
       </label>
 
@@ -89,12 +96,54 @@
 
   <script type="module" src="firebase-config.js"></script>
   <script type="module" src="app.js"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').catch(console.error);
-      });
+
+  <!-- Parche estricto: arranque en blanco (NO toca estilos) -->
+<script>
+(function(){
+  // defensa contra autofill/JS que setea valores
+  function forcePlaceholder(sel){
+    if (!sel || !sel.options || sel.options.length === 0) return;
+    // aseguramos que el primer option sea el placeholder (value="")
+    var first = sel.options[0];
+    if (first && first.value === "") {
+      first.selected = true;
+      // des-seleccionar cualquier otro que haya quedado marcado
+      for (var i = 1; i < sel.options.length; i++) sel.options[i].selected = false;
+      sel.value = "";
+      // disparo 'change' para que tu app.js se entere
+      sel.dispatchEvent(new Event('change', {bubbles:true}));
     }
-  </script>
+    // apago autofill agresivo
+    sel.setAttribute('autocomplete','off');
+    sel.setAttribute('autocapitalize','off');
+    sel.setAttribute('spellcheck','false');
+  }
+
+  function applyBlank(){
+    forcePlaceholder(document.getElementById('sabor'));
+    forcePlaceholder(document.getElementById('formato'));
+    forcePlaceholder(document.getElementById('turno'));
+    forcePlaceholder(document.getElementById('operador'));
+  }
+
+  // 1) apenas se parsea
+  document.addEventListener('DOMContentLoaded', applyBlank);
+  // 2) cuando todo terminó de cargar (por si app.js setea después)
+  window.addEventListener('load', function(){
+    applyBlank();
+    // 3) un par de reintentos cortos por si hay onSnapshot/timeout en app.js
+    setTimeout(applyBlank, 50);
+    setTimeout(applyBlank, 200);
+  });
+
+  // Limpio posibles restos viejos guardados
+  try {
+    localStorage.removeItem('sel_sabor');
+    localStorage.removeItem('sel_formato');
+    localStorage.removeItem('sel_turno');
+  } catch(e){}
+})();
+</script>
+
 </body>
 </html>
