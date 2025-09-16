@@ -1,5 +1,5 @@
 // sw.js — Producción L1 (network-first para HTML y scripts del mismo origen)
-const CACHE = "produccionl1-v10";
+const CACHE = "produccionl1-v11";
 
 const PRECACHE = [
   "./",
