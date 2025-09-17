@@ -1,9 +1,8 @@
-// ===== app.js (robusto) =====
-// Namespace nuevo + validación por VALUE (evita engancharse con el placeholder)
-// - Arranca en blanco (no restaura combo al inicio).
+// ===== app.js (robusto + restore al inicio) =====
+// - Arranca en blanco pero RESTAURA los selects si había una selección previa (VALUE).
 // - No lee ni se suscribe hasta que Sabor+Formato+Turno estén elegidos.
-// - DocID incluye el TURNO y usa los VALUEs de los <select> (no el texto).
-// - Parciales con arrayUnion (sin pisadas entre dispositivos).
+// - DocID por VALUE (evita enganchar placeholder).
+// - Parciales con arrayUnion. Timestamps normalizados a ms.
 
 // --- Imports ---
 import { app, db } from './firebase-config.js';
@@ -15,8 +14,8 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-// === Namespace limpio para datos nuevos ===
-const COLLECTION = 'produccionV2'; // cambiar a 'produccion' si querés volver
+// === Namespace colección ===
+const COLLECTION = 'produccionV2'; // o 'produccion'
 
 // --- Estado ---
 let objetivo = 0;
@@ -30,7 +29,7 @@ let preferirModoNuevoObjetivo = true;
 let modoNuevoDesdeMs = Date.now();
 let ultimaAccionFueCambioCombo = false;
 
-// --- Refs UI (pueden ser null; protegemos todo el código) ---
+// --- Refs UI (pueden ser null) ---
 const saborSelect   = document.getElementById('sabor');
 const formatoSelect = document.getElementById('formato');
 const turnoSelect   = document.getElementById('turno');
@@ -56,23 +55,21 @@ const listaParciales   = document.getElementById('listaParciales');
 const barraProgreso    = document.getElementById('barraProgreso');
 const contextoBox      = document.getElementById('contexto');
 
-// --- LocalStorage (sólo si hay combo completo) ---
+// --- LocalStorage ---
 const LS_KEYS = {
   sabor:   'prod.sabor',
   formato: 'prod.formato',
   turno:   'prod.turno',
 };
 
-// === Helpers de lectura ===
+// === Helpers selects ===
 const getText = (sel)=> sel?.options?.[sel.selectedIndex]?.text?.trim() || '';
 const getVal  = (sel)=> (sel?.value ?? '').trim();
 
-// Valida combo completo por VALUE (placeholder tiene value="")
 function comboCompleto(){
   return !!(getVal(saborSelect) && getVal(formatoSelect) && getVal(turnoSelect));
 }
 
-// Guardar SOLO cuando el combo es válido, y guardar VALUE
 function saveSelectors(){
   if (!comboCompleto()) return;
   try {
@@ -82,7 +79,6 @@ function saveSelectors(){
   } catch {}
 }
 
-// (opcional) restaurar manualmente por VALUE si quisieras (no se usa en init)
 function restoreSelectors(){
   try {
     const s = localStorage.getItem(LS_KEYS.sabor);
@@ -94,7 +90,7 @@ function restoreSelectors(){
   } catch {}
 }
 
-// --- Helpers generales ---
+// === Helpers generales ===
 function BA_YYYYMMDD(){
   const fmt = new Intl.DateTimeFormat('es-AR',{
     timeZone:'America/Argentina/Buenos_Aires', year:'numeric', month:'2-digit', day:'2-digit'
@@ -104,14 +100,12 @@ function BA_YYYYMMDD(){
 }
 const safe = s => (s && String(s).trim()) ? String(s).replace(/[^\w-]+/g,'_') : 'ND';
 
-// Normaliza turno a "A/B/C/D" si coincide al final
 function turnoKey(){
-  const v = getVal(turnoSelect);           // ej: "Turno A"
+  const v = getVal(turnoSelect);
   const m = v.match(/([ABCD])$/i);
   return m ? m[1].toUpperCase() : (v ? v.replace(/[^\w-]+/g,'_') : 'ND');
 }
 
-// ⚠️ DocID por VALUE
 function docId(){
   const saborVal   = safe(getVal(saborSelect));
   const formatoVal = safe(getVal(formatoSelect));
@@ -121,29 +115,21 @@ function docId(){
 function refActual(){ return doc(db, COLLECTION, docId()); }
 
 function setEstado(t){ if (lblEstado) lblEstado.textContent = t; }
-function fmt(tsMs){
-  if (!tsMs) return '—';
-  const d = new Date(tsMs);
-  const p = n => String(n).padStart(2,'0');
-  return `${p(d.getDate())}/${p(d.getMonth()+1)}/${String(d.getFullYear()).slice(-2)} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
 
-// Convierte posibles tipos (number | string | Firestore Timestamp) a ms number
 function toMs(v){
   if (!v) return 0;
   if (typeof v === 'number') return v;
-  if (typeof v === 'string') {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : 0;
-  }
-  // Timestamp de Firestore
-  if (typeof v === 'object' && typeof v.toMillis === 'function') {
-    try { return v.toMillis(); } catch {}
-  }
+  if (typeof v === 'string') { const n = Number(v); return Number.isFinite(n) ? n : 0; }
+  if (typeof v === 'object' && typeof v.toMillis === 'function') { try { return v.toMillis(); } catch {} }
   return 0;
 }
+function fmt(ms){
+  if (!ms) return '—';
+  const d = new Date(ms), p = n=>String(n).padStart(2,'0');
+  return `${p(d.getDate())}/${p(d.getMonth()+1)}/${String(d.getFullYear()).slice(-2)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 
-// --- Auth + robustez ---
+// === Auth ===
 async function initAuth(){
   const auth = getAuth(app);
   return new Promise(res=>{
@@ -167,12 +153,12 @@ async function ensureAuthReady(){
   }catch(e){
     console.error(e);
     setEstado('Error de autenticación');
-    alert('No se pudo autenticar (Auth). Revisá que esté habilitada la autenticación anónima.');
+    alert('No se pudo autenticar (Auth). Verificá que esté habilitada la autenticación anónima.');
     return false;
   }
 }
 
-// --- Lectura server-first (NO crea el doc) ---
+// === Lectura inicial server-first ===
 async function getFreshData(){
   const ref = refActual();
   let snap;
@@ -181,7 +167,7 @@ async function getFreshData(){
   return snap?.exists() ? (snap.data() || {}) : null;
 }
 
-// --- Suscripción ---
+// === Suscripción ===
 async function subscribe(){
   if (!authed) return;
 
@@ -196,14 +182,14 @@ async function subscribe(){
   // 1) Lectura server-first previa
   const data = await getFreshData();
 
-  // 2) Adopción sólo en refresco inicial (no en cambio de combo)
+  // 2) Adoptar objetivo existente si venimos de refresco (no cambio de combo)
   if (data && Number(data.objetivo || 0) > 0 && !ultimaAccionFueCambioCombo) {
-    preferirModoNuevoObjetivo = false;  // mostrar producción ya
-    modoNuevoDesdeMs = 0;               // ignorar filtro “reciente”
+    preferirModoNuevoObjetivo = false;
+    modoNuevoDesdeMs = 0;
   }
   ultimaAccionFueCambioCombo = false;
 
-  // 3) Enganche en tiempo real
+  // 3) onSnapshot
   const ref = refActual();
   unsubscribe = onSnapshot(ref, { includeMetadataChanges:true }, snap=>{
     if (!snap.exists()){
@@ -218,7 +204,7 @@ async function subscribe(){
     objetivo = Number(d.objetivo || 0);
     inicioProduccion = toMs(d.inicio) || null;
 
-    // Normaliza ts de parciales a ms para orden/mostrar
+    // Normalizar parciales a ms
     const normParciales = {};
     const src = d.parciales || {};
     for (const k of Object.keys(src)) {
@@ -230,9 +216,9 @@ async function subscribe(){
     }
     lastSnap.parciales = normParciales;
 
-    const vinoDeServidor = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites;
-    const inputVacio     = !objetivoInput || !objetivoInput.value?.trim();
-    const updatedAtMs    = toMs(d.updatedAt);
+    const vinoDeServidor   = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites;
+    const inputVacio       = !objetivoInput || !objetivoInput.value?.trim();
+    const updatedAtMs      = toMs(d.updatedAt);
     const objetivoReciente = updatedAtMs > modoNuevoDesdeMs;
 
     if (preferirModoNuevoObjetivo && objetivo>0 && vinoDeServidor && inputVacio && objetivoReciente){
@@ -250,9 +236,8 @@ async function subscribe(){
   });
 }
 
-// --- Render ---
+// === Render ===
 function render(){
-  // Para mostrar en la UI usamos el TEXTO visible
   const saborTxt   = getText(saborSelect);
   const formatoTxt = getText(formatoSelect);
 
@@ -272,6 +257,7 @@ function render(){
 
   if (objetivoMostrar) objetivoMostrar.textContent = tieneObj ? (objetivo||0).toLocaleString('es-AR') : '0';
 
+  // Lista de parciales
   const parcialesByTurno = lastSnap.parciales || {};
   const items = [];
   Object.entries(parcialesByTurno).forEach(([k,arr])=>{
@@ -307,7 +293,7 @@ function render(){
   saveSelectors();
 }
 
-// --- Acciones ---
+// === Acciones ===
 // Guardar objetivo
 if (guardarObjetivoBtn) {
   guardarObjetivoBtn.addEventListener('click', async ()=>{
@@ -325,14 +311,14 @@ if (guardarObjetivoBtn) {
       setEstado('Guardando objetivo…');
       await setDoc(ref, {
         objetivo,
-        inicio: inicioProduccion, // guardamos ms; al leer se normaliza
+        inicio: inicioProduccion,         // ms (toMs al leer)
         updatedAt: serverTimestamp(),
         session: session || 1
       }, { merge:true });
 
       preferirModoNuevoObjetivo = false;
       setEstado('Objetivo guardado');
-      render();
+      render(); // también persiste selectores
     }catch(e){
       console.error(e);
       setEstado('Error al guardar: ' + (e.code || e.message));
@@ -419,7 +405,7 @@ if (resetBtn) {
   });
 }
 
-// --- Selectores (cambio de combo) ---
+// === Selectores (cambio de combo) ===
 [saborSelect, formatoSelect, turnoSelect].forEach(sel=>{
   if (!sel) return;
   sel.addEventListener('change', async ()=>{
@@ -442,10 +428,21 @@ if (resetBtn) {
   });
 });
 
-// --- Init ---
+// === Init (ARREGLO CLAVE: restaurar antes de auth/subscribe) ===
 (async ()=>{
   setEstado('Conectando…');
-  // Arranca en blanco: no restauramos selección automáticamente
+
+  // ✅ Restaurar selección previa por VALUE ANTES de auth/subscribe
+  restoreSelectors();
+
   await initAuth();
-  await subscribe(); // sólo se engancha si el combo está completo
+
+  // ✅ Si tras restaurar ya hay combo, enganchamos
+  if (comboCompleto()) {
+    await subscribe();
+  } else {
+    objetivo = 0; inicioProduccion = null;
+    lastSnap = { parciales:{}, updatedAt:null };
+    render();
+  }
 })();

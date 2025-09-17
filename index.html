@@ -4,12 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Control de Producción - Llenadora</title>
-  
-  <meta name="theme-color" content="#1170d6" />
-  <!-- index.html (agregá ?v=fecha a cada recurso local) -->
-<link rel="stylesheet" href="estilos.css?v=2025-09-16-1">
-<link rel="manifest" href="manifest.webmanifest?v=2025-09-16-1">
 
+  <meta name="theme-color" content="#1170d6" />
+
+  <!-- Favicons (opcional si los tenés en el root) -->
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="./favicon-16.png">
+  <link rel="apple-touch-icon" href="./apple-touch-icon-180.png">
+
+  <!-- Versionado para romper caché -->
+  <link rel="manifest" href="manifest.webmanifest?v=2025-09-16-1">
+  <link rel="stylesheet" href="estilos.css?v=2025-09-16-1">
 </head>
 <body>
   <main class="wrap">
@@ -18,43 +23,43 @@
     <section class="grid">
       <label>Sabor
         <select id="sabor">
-          <option value="" selected disabled>— Elegír —</option>
-          <option>Powerade MZN</option>
-          <option>Powerade MB</option>
-          <option>Powerade FT</option>
-          <option>Cepita NJA</option>
-          <option>Cepita DZN</option>
-          <option>Cepita FM</option>
+          <option value="" selected disabled>— Elegir —</option>
+          <option value="Powerade_MZN">Powerade MZN</option>
+          <option value="Powerade_MB">Powerade MB</option>
+          <option value="Powerade_FT">Powerade FT</option>
+          <option value="Cepita_NJA">Cepita NJA</option>
+          <option value="Cepita_DZN">Cepita DZN</option>
+          <option value="Cepita_FM">Cepita FM</option>
         </select>
       </label>
 
       <label>Formato
         <select id="formato">
-          <option value="" selected disabled>— Elegír —</option>
-          <option>300 ml</option>
-          <option>500 ml</option>
-          <option>995 ml</option>
-          <option>1500 ml</option>
+          <option value="" selected disabled>— Elegir —</option>
+          <option value="300_ml">300 ml</option>
+          <option value="500_ml">500 ml</option>
+          <option value="995_ml">995 ml</option>
+          <option value="1500_ml">1500 ml</option>
         </select>
       </label>
 
       <label>Turno
         <select id="turno">
-          <option value="" selected disabled>— Elegír —</option>
-          <option>Turno A</option>
-          <option>Turno B</option>
-          <option>Turno C</option>
-          <option>Turno D</option>
+          <option value="" selected disabled>— Elegir —</option>
+          <option value="Turno_A">Turno A</option>
+          <option value="Turno_B">Turno B</option>
+          <option value="Turno_C">Turno C</option>
+          <option value="Turno_D">Turno D</option>
         </select>
       </label>
 
       <label>Operador
         <select id="operador">
-          <option value="" selected disabled>— Elegír —</option>
-          <option>Operador 1</option>
-          <option>Operador 2</option>
-          <option>Operador 3</option>
-          <option>Operador 4</option>
+          <option value="" selected disabled>— Elegir —</option>
+          <option value="Operador_1">Operador 1</option>
+          <option value="Operador_2">Operador 2</option>
+          <option value="Operador_3">Operador 3</option>
+          <option value="Operador_4">Operador 4</option>
         </select>
       </label>
 
@@ -97,38 +102,38 @@
     </section>
   </main>
 
-  <script type="module" src="firebase-config.js"></script>
+  <!-- Firebase config primero -->
+  <script type="module" src="firebase-config.js?v=2025-09-16-1"></script>
+  <!-- App principal -->
   <script type="module" src="app.js?v=2025-09-16-1"></script>
 
-  <!-- Parche estricto: arranque en blanco (NO toca estilos) -->
-<script>
-  // Forzar reload cuando el SW avisa "SW_UPDATED"
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.addEventListener('message', (event) => {
-      if (event.data && event.data.type === 'SW_UPDATED') {
-        // Recargar todas las pestañas controladas
+  <!-- Registro del Service Worker + control de actualización -->
+  <script>
+    // Registrar SW con versionado
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js?v=2025-09-16-1').catch(console.error);
+
+      // Forzar reload cuando el SW avisa "SW_UPDATED"
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'SW_UPDATED') {
+          location.reload();
+        }
+      });
+    }
+
+    // Botón opcional (si lo agregás en tu UI) para "Forzar actualización"
+    window.forzarActualizacion = async function(){
+      try {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+        location.reload(true);
+      } catch (e) {
+        alert('No se pudo forzar la actualización: ' + e.message);
         location.reload();
       }
-    });
-  }
-
-  // Botón opcional para "Forzar actualización" desde la UI:
-  window.forzarActualizacion = async function(){
-    try {
-      // 1) Limpiar caches
-      const keys = await caches.keys();
-      await Promise.all(keys.map(k => caches.delete(k)));
-      // 2) Desregistrar SWs
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(r => r.unregister()));
-      // 3) Recargar
-      location.reload(true);
-    } catch (e) {
-      alert('No se pudo forzar la actualización: ' + e.message);
-      location.reload();
-    }
-  };
-</script>
-
+    };
+  </script>
 </body>
 </html>
