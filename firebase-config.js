@@ -2,12 +2,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCjXg0AdNEablAHrdwY2Hgw43txb6WRE8w",
-  authDomain: "control-de-produccion-50f3b.firebaseapp.com",
-  projectId: "control-de-produccion-50f3b",
-  storageBucket: "control-de-produccion-50f3b.firebasestorage.app",
-  messagingSenderId: "883965428389",
-  appId: "1:883965428389:web:ae02ae4df0bc5a04af434c"
+  apiKey: "AIzaSyBbvxJbxIIjM45-woFxNIfzCwV0dgrBuNs",
+  authDomain: "produccion-51765.firebaseapp.com",
+  projectId: "produccion-51765",
+  storageBucket: "produccion-51765.firebasestorage.app",
+  messagingSenderId: "360320005119",
+  appId: "1:360320005119:web:781e2820f1456d66166dca"
 };
 
 export const app = initializeApp(firebaseConfig);

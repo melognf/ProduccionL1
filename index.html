@@ -102,38 +102,9 @@
     </section>
   </main>
 
-  <!-- Firebase config primero -->
   <script type="module" src="firebase-config.js?v=2025-09-16-1"></script>
-  <!-- App principal -->
   <script type="module" src="app.js?v=2025-09-16-1"></script>
 
-  <!-- Registro del Service Worker + control de actualización -->
-  <script>
-    // Registrar SW con versionado
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js?v=2025-09-16-1').catch(console.error);
-
-      // Forzar reload cuando el SW avisa "SW_UPDATED"
-      navigator.serviceWorker.addEventListener('message', (event) => {
-        if (event.data && event.data.type === 'SW_UPDATED') {
-          location.reload();
-        }
-      });
-    }
-
-    // Botón opcional (si lo agregás en tu UI) para "Forzar actualización"
-    window.forzarActualizacion = async function(){
-      try {
-        const keys = await caches.keys();
-        await Promise.all(keys.map(k => caches.delete(k)));
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map(r => r.unregister()));
-        location.reload(true);
-      } catch (e) {
-        alert('No se pudo forzar la actualización: ' + e.message);
-        location.reload();
-      }
-    };
-  </script>
+  
 </body>
 </html>
