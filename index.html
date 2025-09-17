@@ -4,9 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Control de Producción - Llenadora</title>
-  <link rel="manifest" href="./manifest.webmanifest">
+  
   <meta name="theme-color" content="#1170d6" />
-  <link rel="stylesheet" href="estilos.css">
+  <!-- index.html (agregá ?v=fecha a cada recurso local) -->
+<link rel="stylesheet" href="estilos.css?v=2025-09-16-1">
+<link rel="manifest" href="manifest.webmanifest?v=2025-09-16-1">
+
 </head>
 <body>
   <main class="wrap">
@@ -95,54 +98,36 @@
   </main>
 
   <script type="module" src="firebase-config.js"></script>
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=2025-09-16-1"></script>
 
   <!-- Parche estricto: arranque en blanco (NO toca estilos) -->
 <script>
-(function(){
-  // defensa contra autofill/JS que setea valores
-  function forcePlaceholder(sel){
-    if (!sel || !sel.options || sel.options.length === 0) return;
-    // aseguramos que el primer option sea el placeholder (value="")
-    var first = sel.options[0];
-    if (first && first.value === "") {
-      first.selected = true;
-      // des-seleccionar cualquier otro que haya quedado marcado
-      for (var i = 1; i < sel.options.length; i++) sel.options[i].selected = false;
-      sel.value = "";
-      // disparo 'change' para que tu app.js se entere
-      sel.dispatchEvent(new Event('change', {bubbles:true}));
+  // Forzar reload cuando el SW avisa "SW_UPDATED"
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'SW_UPDATED') {
+        // Recargar todas las pestañas controladas
+        location.reload();
+      }
+    });
+  }
+
+  // Botón opcional para "Forzar actualización" desde la UI:
+  window.forzarActualizacion = async function(){
+    try {
+      // 1) Limpiar caches
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+      // 2) Desregistrar SWs
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+      // 3) Recargar
+      location.reload(true);
+    } catch (e) {
+      alert('No se pudo forzar la actualización: ' + e.message);
+      location.reload();
     }
-    // apago autofill agresivo
-    sel.setAttribute('autocomplete','off');
-    sel.setAttribute('autocapitalize','off');
-    sel.setAttribute('spellcheck','false');
-  }
-
-  function applyBlank(){
-    forcePlaceholder(document.getElementById('sabor'));
-    forcePlaceholder(document.getElementById('formato'));
-    forcePlaceholder(document.getElementById('turno'));
-    forcePlaceholder(document.getElementById('operador'));
-  }
-
-  // 1) apenas se parsea
-  document.addEventListener('DOMContentLoaded', applyBlank);
-  // 2) cuando todo terminó de cargar (por si app.js setea después)
-  window.addEventListener('load', function(){
-    applyBlank();
-    // 3) un par de reintentos cortos por si hay onSnapshot/timeout en app.js
-    setTimeout(applyBlank, 50);
-    setTimeout(applyBlank, 200);
-  });
-
-  // Limpio posibles restos viejos guardados
-  try {
-    localStorage.removeItem('sel_sabor');
-    localStorage.removeItem('sel_formato');
-    localStorage.removeItem('sel_turno');
-  } catch(e){}
-})();
+  };
 </script>
 
 </body>

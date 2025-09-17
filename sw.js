@@ -1,55 +1,56 @@
-// sw.js — Producción L1 (network-first para HTML y scripts del mismo origen)
-const CACHE = "produccionl1-v11";
+// sw.js — network-first para HTML, cache-first para estáticos
+const CACHE = "produccionl1-v11"; // ← ¡SUBILO en cada cambio!
 
 const PRECACHE = [
   "./",
-  "./index.html",
-  "./estilos.css",
-  "./manifest.webmanifest",
+  "./index.html?v=2025-09-16-1",
+  "./estilos.css?v=2025-09-16-1",
+  "./app.js?v=2025-09-16-1",
+  "./manifest.webmanifest?v=2025-09-16-1",
   "./favicon-32.png",
   "./favicon-16.png",
   "./apple-touch-icon-180.png"
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)));
-  self.skipWaiting();
+  self.skipWaiting(); // ← toma control sin esperar
+  event.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)));
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => (k !== CACHE ? caches.delete(k) : null)));
+    await self.clients.claim(); // ← controla de inmediato
+    // Avisar a las páginas que hay versión nueva
+    const clientsList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    clientsList.forEach(client => client.postMessage({ type: "SW_UPDATED" }));
+  })());
 });
 
-async function putCache(req, resp) {
-  try { const c = await caches.open(CACHE); await c.put(req, resp.clone()); } catch {}
-  return resp;
-}
-
+// Network-first para HTML; cache-first para estáticos
 self.addEventListener("fetch", (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
+  const req = event.request;
+  const url = new URL(req.url);
 
-  // Solo MISMO ORIGEN (deja CDNs como gstatic sin tocar)
-  if (url.origin !== location.origin) return;
-
-  const isHTML   = request.mode === "navigate" || request.destination === "document";
-  const isScript = request.destination === "script";
-
-  if (isHTML || isScript) {
+  // HTML: network-first
+  if (req.mode === "navigate" || (req.method === "GET" && req.headers.get("accept")?.includes("text/html"))) {
     event.respondWith(
-      fetch(request).then((r) => putCache(request, r)).catch(() => caches.match(request))
+      fetch(req).then(r => {
+        const copy = r.clone();
+        caches.open(CACHE).then(c => c.put(req, copy));
+        return r;
+      }).catch(() => caches.match(req))
     );
     return;
   }
 
+  // Estáticos: cache-first
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const fetchPromise = fetch(request).then((r) => putCache(request, r)).catch(() => cached);
-      return cached || fetchPromise;
-    })
+    caches.match(req).then(hit => hit || fetch(req).then(r => {
+      const copy = r.clone();
+      caches.open(CACHE).then(c => c.put(req, copy));
+      return r;
+    }))
   );
 });
