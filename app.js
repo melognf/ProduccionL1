@@ -391,3 +391,28 @@ resetBtn.addEventListener('click', async ()=>{
   await initAuth();
   await subscribe(); // sólo se engancha si el combo está completo
 })();
+
+// === DEBUG: mostrar la ruta de sincronización actual ===
+function canalActual() {
+  const path = `${COLLECTION}/${docId()}`;
+  console.log('[SYNC] Canal:', path);
+  const lbl = document.getElementById('lblEstado');
+  if (lbl) lbl.textContent = `Conectando… (${path})`;
+  return path;
+}
+
+// Llamalo justo antes de suscribirte:
+async function subscribe(){
+  if (!authed) return;
+  if (!comboCompleto()){
+    objetivo = 0; inicioProduccion = null;
+    lastSnap = { parciales:{}, updatedAt:null };
+    render();
+    return;
+  }
+  // 👉 MOSTRAR canal que se va a usar
+  canalActual();
+
+  if (unsubscribe) { unsubscribe(); unsubscribe=null; }
+  // ... (resto igual)
+}
