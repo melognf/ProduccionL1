@@ -15,6 +15,9 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
+// === Namespace limpio para datos nuevos ===
+const COLLECTION = 'produccionV2'; // <- cambiá acá si querés volver a 'produccion'
+
 // --- Estado ---
 let objetivo = 0;
 let inicioProduccion = null;
@@ -116,7 +119,8 @@ function turnoKey(){
 function docId(){
   return `${BA_YYYYMMDD()}__${safe(getText(saborSelect))}_${safe(getText(formatoSelect))}__${turnoKey()}`;
 }
-function refActual(){ return doc(db, 'produccion', docId()); }
+// Usamos la nueva constante COLLECTION aquí
+function refActual(){ return doc(db, COLLECTION, docId()); }
 
 function setEstado(t){ if (lblEstado) lblEstado.textContent = t; }
 function fmt(ts){ const d=new Date(ts),p=n=>String(n).padStart(2,'0'); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${String(d.getFullYear()).slice(-2)} ${p(d.getHours())}:${p(d.getMinutes())}`; }
