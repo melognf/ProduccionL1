@@ -1,8 +1,9 @@
-// ===== app.js =====
-// Namespace nuevo + manejo de errores al guardar
+// ===== app.js (robusto) =====
+// Namespace nuevo + validación por VALUE (evita engancharse con el placeholder)
 // - Arranca en blanco (no restaura combo al inicio).
 // - No lee ni se suscribe hasta que Sabor+Formato+Turno estén elegidos.
-// - DocID incluye el TURNO para evitar pisadas entre combos.
+// - DocID incluye el TURNO y usa los VALUEs de los <select> (no el texto).
+// - Parciales con arrayUnion (sin pisadas entre dispositivos).
 
 // --- Imports ---
 import { app, db } from './firebase-config.js';
@@ -29,7 +30,7 @@ let preferirModoNuevoObjetivo = true;
 let modoNuevoDesdeMs = Date.now();
 let ultimaAccionFueCambioCombo = false;
 
-// --- Refs UI ---
+// --- Refs UI (pueden ser null; protegemos todo el código) ---
 const saborSelect   = document.getElementById('sabor');
 const formatoSelect = document.getElementById('formato');
 const turnoSelect   = document.getElementById('turno');
@@ -53,6 +54,7 @@ const agregarParcialBtn= document.getElementById('agregarParcialBtn');
 const resetBtn         = document.getElementById('resetBtn');
 const listaParciales   = document.getElementById('listaParciales');
 const barraProgreso    = document.getElementById('barraProgreso');
+const contextoBox      = document.getElementById('contexto');
 
 // --- LocalStorage (sólo si hay combo completo) ---
 const LS_KEYS = {
@@ -61,58 +63,85 @@ const LS_KEYS = {
   turno:   'prod.turno',
 };
 
+// === Helpers de lectura ===
+const getText = (sel)=> sel?.options?.[sel.selectedIndex]?.text?.trim() || '';
+const getVal  = (sel)=> (sel?.value ?? '').trim();
+
+// Valida combo completo por VALUE (placeholder tiene value="")
 function comboCompleto(){
-  return !!(getText(saborSelect) && getText(formatoSelect) && getText(turnoSelect));
+  return !!(getVal(saborSelect) && getVal(formatoSelect) && getVal(turnoSelect));
 }
+
+// Guardar SOLO cuando el combo es válido, y guardar VALUE
 function saveSelectors(){
   if (!comboCompleto()) return;
   try {
-    localStorage.setItem(LS_KEYS.sabor,   getText(saborSelect));
-    localStorage.setItem(LS_KEYS.formato, getText(formatoSelect));
-    localStorage.setItem(LS_KEYS.turno,   getText(turnoSelect));
+    localStorage.setItem(LS_KEYS.sabor,   getVal(saborSelect));
+    localStorage.setItem(LS_KEYS.formato, getVal(formatoSelect));
+    localStorage.setItem(LS_KEYS.turno,   getVal(turnoSelect));
   } catch {}
 }
 
-// (opcional) restaurar manualmente si quisieras
+// (opcional) restaurar manualmente por VALUE si quisieras (no se usa en init)
 function restoreSelectors(){
   try {
-    const s  = localStorage.getItem(LS_KEYS.sabor);
-    const f  = localStorage.getItem(LS_KEYS.formato);
-    const t  = localStorage.getItem(LS_KEYS.turno);
-    if (s) selectByText(saborSelect, s);
-    if (f) selectByText(formatoSelect, f);
-    if (t) selectByText(turnoSelect, t);
+    const s = localStorage.getItem(LS_KEYS.sabor);
+    const f = localStorage.getItem(LS_KEYS.formato);
+    const t = localStorage.getItem(LS_KEYS.turno);
+    if (s && saborSelect)   saborSelect.value   = s;
+    if (f && formatoSelect) formatoSelect.value = f;
+    if (t && turnoSelect)   turnoSelect.value   = t;
   } catch {}
 }
-function selectByText(selectEl, text){
-  if (!selectEl || !text) return;
-  const norm = v => String(v).trim().toLowerCase();
-  const want = norm(text);
-  for (let i=0;i<selectEl.options.length;i++){
-    if (norm(selectEl.options[i].text) === want || norm(selectEl.options[i].value) === want){
-      selectEl.selectedIndex = i; break;
-    }
-  }
-}
 
-// --- Helpers ---
-const getText = (sel)=> sel?.options?.[sel.selectedIndex]?.text?.trim() || sel?.value || '';
+// --- Helpers generales ---
 function BA_YYYYMMDD(){
-  const fmt = new Intl.DateTimeFormat('es-AR',{ timeZone:'America/Argentina/Buenos_Aires', year:'numeric', month:'2-digit', day:'2-digit'});
+  const fmt = new Intl.DateTimeFormat('es-AR',{
+    timeZone:'America/Argentina/Buenos_Aires', year:'numeric', month:'2-digit', day:'2-digit'
+  });
   const p = Object.fromEntries(fmt.formatToParts(new Date()).map(x=>[x.type,x.value]));
   return `${p.year}-${p.month}-${p.day}`;
 }
 const safe = s => (s && String(s).trim()) ? String(s).replace(/[^\w-]+/g,'_') : 'ND';
+
+// Normaliza turno a "A/B/C/D" si coincide al final
 function turnoKey(){
-  const t = getText(turnoSelect); const m = t.match(/([ABCD])$/i);
-  return m ? m[1].toUpperCase() : safe(t);
+  const v = getVal(turnoSelect);           // ej: "Turno A"
+  const m = v.match(/([ABCD])$/i);
+  return m ? m[1].toUpperCase() : (v ? v.replace(/[^\w-]+/g,'_') : 'ND');
 }
+
+// ⚠️ DocID por VALUE
 function docId(){
-  return `${BA_YYYYMMDD()}__${safe(getText(saborSelect))}_${safe(getText(formatoSelect))}__${turnoKey()}`;
+  const saborVal   = safe(getVal(saborSelect));
+  const formatoVal = safe(getVal(formatoSelect));
+  const turnoVal   = turnoKey();
+  return `${BA_YYYYMMDD()}__${saborVal}_${formatoVal}__${turnoVal}`;
 }
 function refActual(){ return doc(db, COLLECTION, docId()); }
+
 function setEstado(t){ if (lblEstado) lblEstado.textContent = t; }
-function fmt(ts){ const d=new Date(ts),p=n=>String(n).padStart(2,'0'); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${String(d.getFullYear()).slice(-2)} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function fmt(tsMs){
+  if (!tsMs) return '—';
+  const d = new Date(tsMs);
+  const p = n => String(n).padStart(2,'0');
+  return `${p(d.getDate())}/${p(d.getMonth()+1)}/${String(d.getFullYear()).slice(-2)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// Convierte posibles tipos (number | string | Firestore Timestamp) a ms number
+function toMs(v){
+  if (!v) return 0;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  // Timestamp de Firestore
+  if (typeof v === 'object' && typeof v.toMillis === 'function') {
+    try { return v.toMillis(); } catch {}
+  }
+  return 0;
+}
 
 // --- Auth + robustez ---
 async function initAuth(){
@@ -121,14 +150,13 @@ async function initAuth(){
     onAuthStateChanged(auth, async user=>{
       if (user){ authed=true; await subscribe(); res(); }
       else {
-        try{ await signInAnonymously(auth); }
+        try{ await signInAnonymously(auth); authed=true; }
         catch(e){ authed=false; console.error(e); setEstado('Auth anónima deshabilitada'); }
         res();
       }
     });
   });
 }
-// FIX: asegura auth antes de escribir
 async function ensureAuthReady(){
   if (authed) return true;
   try{
@@ -186,12 +214,25 @@ async function subscribe(){
     }
     const d = snap.data() || {};
     lastSnap = d;
+
     objetivo = Number(d.objetivo || 0);
-    inicioProduccion = d.inicio || null;
+    inicioProduccion = toMs(d.inicio) || null;
+
+    // Normaliza ts de parciales a ms para orden/mostrar
+    const normParciales = {};
+    const src = d.parciales || {};
+    for (const k of Object.keys(src)) {
+      const arr = Array.isArray(src[k]) ? src[k] : [];
+      normParciales[k] = arr.map(item => ({
+        cantidad: Number(item?.cantidad || 0),
+        ts: toMs(item?.ts) || 0
+      }));
+    }
+    lastSnap.parciales = normParciales;
 
     const vinoDeServidor = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites;
-    const inputVacio     = !objetivoInput || !objetivoInput.value.trim();
-    const updatedAtMs    = (d.updatedAt && d.updatedAt.toMillis) ? d.updatedAt.toMillis() : 0;
+    const inputVacio     = !objetivoInput || !objetivoInput.value?.trim();
+    const updatedAtMs    = toMs(d.updatedAt);
     const objetivoReciente = updatedAtMs > modoNuevoDesdeMs;
 
     if (preferirModoNuevoObjetivo && objetivo>0 && vinoDeServidor && inputVacio && objetivoReciente){
@@ -211,22 +252,25 @@ async function subscribe(){
 
 // --- Render ---
 function render(){
-  const sabor=getText(saborSelect), formato=getText(formatoSelect);
+  // Para mostrar en la UI usamos el TEXTO visible
+  const saborTxt   = getText(saborSelect);
+  const formatoTxt = getText(formatoSelect);
 
   const tieneObj = objetivo>0 && !preferirModoNuevoObjetivo;
-  panelObjetivo.style.display = tieneObj ? 'none':'block';
-  resumenDiv.style.display    = tieneObj ? 'block':'none';
+
+  if (panelObjetivo) panelObjetivo.style.display = tieneObj ? 'none':'block';
+  if (resumenDiv)    resumenDiv.style.display    = tieneObj ? 'block':'none';
+  if (contextoBox)   contextoBox.style.display   = tieneObj ? 'flex' : 'none';
 
   if (tieneObj){
-    ctxSabor.textContent = `Sabor: ${sabor}`;
-    ctxFormato.textContent = `Formato: ${formato}`;
-    document.getElementById('contexto').style.display = 'flex';
+    if (ctxSabor)   ctxSabor.textContent   = `Sabor: ${saborTxt}`;
+    if (ctxFormato) ctxFormato.textContent = `Formato: ${formatoTxt}`;
+    if (objetivoInput) objetivoInput.value = '';
   } else {
-    document.getElementById('contexto').style.display = 'none';
     if (objetivoInput) objetivoInput.value = '';
   }
 
-  objetivoMostrar.textContent = tieneObj ? (objetivo||0).toLocaleString('es-AR') : '0';
+  if (objetivoMostrar) objetivoMostrar.textContent = tieneObj ? (objetivo||0).toLocaleString('es-AR') : '0';
 
   const parcialesByTurno = lastSnap.parciales || {};
   const items = [];
@@ -236,134 +280,148 @@ function render(){
   items.sort((a,b)=> (a.p?.ts||0) - (b.p?.ts||0));
 
   const acumulado = items.reduce((acc,it)=> acc + (parseInt(it.p?.cantidad)||0), 0);
-  acumuladoSpan.textContent = acumulado.toLocaleString('es-AR');
-  faltanteSpan.textContent  = Math.max((objetivo||0)-acumulado,0).toLocaleString('es-AR');
-  inicioSpan.textContent    = inicioProduccion ? fmt(inicioProduccion) : '—';
+  if (acumuladoSpan) acumuladoSpan.textContent = acumulado.toLocaleString('es-AR');
+  if (faltanteSpan)  faltanteSpan.textContent  = Math.max((objetivo||0)-acumulado,0).toLocaleString('es-AR');
+  if (inicioSpan)    inicioSpan.textContent    = inicioProduccion ? fmt(inicioProduccion) : '—';
 
-  listaParciales.innerHTML = '';
-  items.slice().reverse().forEach((it,idx)=>{
-    const tsTxt = it.p?.ts ? fmt(it.p.ts) : '—';
-    const li = document.createElement('li');
-    li.textContent = `#${idx+1} — ${it.p.cantidad?.toLocaleString('es-AR')} — Turno ${it.k} — ${tsTxt}`;
-    listaParciales.appendChild(li);
-  });
+  if (listaParciales) {
+    listaParciales.innerHTML = '';
+    items.slice().reverse().forEach((it,idx)=>{
+      const tsTxt = it.p?.ts ? fmt(it.p.ts) : '—';
+      const li = document.createElement('li');
+      li.textContent = `#${idx+1} — ${Number(it.p.cantidad||0).toLocaleString('es-AR')} — Turno ${it.k} — ${tsTxt}`;
+      listaParciales.appendChild(li);
+    });
+  }
 
   let pct = 0;
-  if (tieneObj) pct = Math.round( (acumulado / objetivo) * 100 );
+  if (tieneObj && objetivo>0) pct = Math.round( (acumulado / objetivo) * 100 );
   pct = Math.max(0, Math.min(100, pct));
-  barraProgreso.style.width = `${pct}%`;
-  barraProgreso.textContent = pct ? `${pct}%` : '';
-  barraProgreso.style.background = pct<30 ? '#dc3545' : (pct<70 ? '#ffc107' : '#28a745');
+  if (barraProgreso) {
+    barraProgreso.style.width = `${pct}%`;
+    barraProgreso.textContent = pct ? `${pct}%` : '';
+    barraProgreso.style.background = pct<30 ? '#dc3545' : (pct<70 ? '#ffc107' : '#28a745');
+  }
 
-  // Guardar combo actual sólo si es válido
+  // Guardar combo actual sólo si es válido (por VALUE)
   saveSelectors();
 }
 
 // --- Acciones ---
-guardarObjetivoBtn.addEventListener('click', async ()=>{
-  if (!comboCompleto()){ alert('Elegí Sabor, Formato y Turno.'); return; }
-  if (!await ensureAuthReady()) return;
+// Guardar objetivo
+if (guardarObjetivoBtn) {
+  guardarObjetivoBtn.addEventListener('click', async ()=>{
+    if (!comboCompleto()){ alert('Elegí Sabor, Formato y Turno.'); return; }
+    if (!await ensureAuthReady()) return;
 
-  const val = parseInt(String(objetivoInput.value).replace(/\D/g,''));
-  if (!val || val<=0){ alert('Ingresá un objetivo válido (>0)'); return; }
+    const val = parseInt(String(objetivoInput?.value ?? '').replace(/\D/g,'')) || 0;
+    if (!val || val<=0){ alert('Ingresá un objetivo válido (>0)'); objetivoInput?.focus(); return; }
 
-  const ref = refActual();
-  objetivo = val;
-  if (!inicioProduccion) inicioProduccion = Date.now();
+    const ref = refActual();
+    objetivo = val;
+    if (!inicioProduccion) inicioProduccion = Date.now();
 
-  try{
-    setEstado('Guardando objetivo…');
-    await setDoc(ref, {
-      objetivo,
-      inicio: inicioProduccion,
-      updatedAt: serverTimestamp(),
-      session: session || 1
-    }, { merge:true });
+    try{
+      setEstado('Guardando objetivo…');
+      await setDoc(ref, {
+        objetivo,
+        inicio: inicioProduccion, // guardamos ms; al leer se normaliza
+        updatedAt: serverTimestamp(),
+        session: session || 1
+      }, { merge:true });
 
-    preferirModoNuevoObjetivo = false;
-    setEstado('Objetivo guardado');
-    render();
-  }catch(e){
-    console.error(e);
-    setEstado('Error al guardar: ' + (e.code || e.message));
-    alert('No se pudo guardar el objetivo:\n' + (e.code || e.message));
-  }
-});
-
-agregarParcialBtn.addEventListener('click', async ()=>{
-  if (!comboCompleto()){ alert('Elegí Sabor, Formato y Turno.'); return; }
-  if (!await ensureAuthReady()) return;
-
-  const val = parseInt(String(parcialInput.value).replace(/\D/g,''));
-  if (!val || val<=0){ alert('Ingresá un número válido (>0)'); return; }
-
-  const ref = refActual();
-  const k = turnoKey();
-  const item = { cantidad: val, ts: Date.now() };
-
-  try{
-    setEstado('Guardando parcial…');
-    await updateDoc(ref, {
-      [`parciales.${k}`]: arrayUnion(item),
-      updatedAt: serverTimestamp()
-    });
-    parcialInput.value='';
-    setEstado('Parcial guardado');
-  }catch(e){
-    if (e.code === 'not-found'){
-      try{
-        await setDoc(ref, {
-          objetivo: objetivo||0,
-          inicio: inicioProduccion||null,
-          session: session||1,
-          parciales: { [k]: [item] },
-          updatedAt: serverTimestamp()
-        }, { merge:true });
-        parcialInput.value='';
-        setEstado('Parcial guardado (doc creado)');
-      }catch(e2){
-        console.error(e2);
-        setEstado('Error al crear doc: ' + (e2.code || e2.message));
-        alert('No se pudo crear el documento:\n' + (e2.code || e2.message));
-      }
-    }else{
+      preferirModoNuevoObjetivo = false;
+      setEstado('Objetivo guardado');
+      render();
+    }catch(e){
       console.error(e);
-      setEstado('Error al guardar parcial: ' + (e.code || e.message));
-      alert('No se pudo agregar el parcial:\n' + (e.code || e.message));
+      setEstado('Error al guardar: ' + (e.code || e.message));
+      alert('No se pudo guardar el objetivo:\n' + (e.code || e.message));
     }
-  }
-});
+  });
+}
 
-resetBtn.addEventListener('click', async ()=>{
-  if (!comboCompleto()){ alert('Elegí Sabor, Formato y Turno.'); return; }
-  if (!await ensureAuthReady()) return;
-  if (!confirm('¿Reiniciar objetivo y parciales de este combo?')) return;
+// Agregar parcial
+if (agregarParcialBtn) {
+  agregarParcialBtn.addEventListener('click', async ()=>{
+    if (!comboCompleto()){ alert('Elegí Sabor, Formato y Turno.'); return; }
+    if (!await ensureAuthReady()) return;
 
-  const ref = refActual();
-  try{
-    setEstado('Reiniciando…');
-    await setDoc(ref, {
-      objetivo: 0,
-      parciales: {},
-      inicio: null,
-      session: increment(1),
-      resetAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    }, { merge:true });
+    const val = parseInt(String(parcialInput?.value ?? '').replace(/\D/g,'')) || 0;
+    if (!val || val<=0){ alert('Ingresá un número válido (>0)'); parcialInput?.focus(); return; }
 
-    preferirModoNuevoObjetivo = true;
-    modoNuevoDesdeMs = Date.now();
-    setEstado('Reiniciado');
-    render();
-  }catch(e){
-    console.error(e);
-    setEstado('Error al reiniciar: ' + (e.code || e.message));
-    alert('No se pudo reiniciar:\n' + (e.code || e.message));
-  }
-});
+    const ref = refActual();
+    const k = turnoKey();
+    const item = { cantidad: val, ts: Date.now() };
+
+    try{
+      setEstado('Guardando parcial…');
+      await updateDoc(ref, {
+        [`parciales.${k}`]: arrayUnion(item),
+        updatedAt: serverTimestamp()
+      });
+      if (parcialInput) parcialInput.value='';
+      setEstado('Parcial guardado');
+    }catch(e){
+      if (e.code === 'not-found'){
+        try{
+          await setDoc(ref, {
+            objetivo: objetivo||0,
+            inicio: inicioProduccion||null,
+            session: session||1,
+            parciales: { [k]: [item] },
+            updatedAt: serverTimestamp()
+          }, { merge:true });
+          if (parcialInput) parcialInput.value='';
+          setEstado('Parcial guardado (doc creado)');
+        }catch(e2){
+          console.error(e2);
+          setEstado('Error al crear doc: ' + (e2.code || e2.message));
+          alert('No se pudo crear el documento:\n' + (e2.code || e2.message));
+        }
+      }else{
+        console.error(e);
+        setEstado('Error al guardar parcial: ' + (e.code || e.message));
+        alert('No se pudo agregar el parcial:\n' + (e.code || e.message));
+      }
+    }
+  });
+}
+
+// Reset
+if (resetBtn) {
+  resetBtn.addEventListener('click', async ()=>{
+    if (!comboCompleto()){ alert('Elegí Sabor, Formato y Turno.'); return; }
+    if (!await ensureAuthReady()) return;
+    if (!confirm('¿Reiniciar objetivo y parciales de este combo?')) return;
+
+    const ref = refActual();
+    try{
+      setEstado('Reiniciando…');
+      await setDoc(ref, {
+        objetivo: 0,
+        parciales: {},
+        inicio: null,
+        session: increment(1),
+        resetAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge:true });
+
+      preferirModoNuevoObjetivo = true;
+      modoNuevoDesdeMs = Date.now();
+      setEstado('Reiniciado');
+      render();
+    }catch(e){
+      console.error(e);
+      setEstado('Error al reiniciar: ' + (e.code || e.message));
+      alert('No se pudo reiniciar:\n' + (e.code || e.message));
+    }
+  });
+}
 
 // --- Selectores (cambio de combo) ---
 [saborSelect, formatoSelect, turnoSelect].forEach(sel=>{
+  if (!sel) return;
   sel.addEventListener('change', async ()=>{
     preferirModoNuevoObjetivo = true;
     modoNuevoDesdeMs = Date.now();
@@ -387,32 +445,7 @@ resetBtn.addEventListener('click', async ()=>{
 // --- Init ---
 (async ()=>{
   setEstado('Conectando…');
-  // NO restauramos selección al inicio (arranque en blanco).
+  // Arranca en blanco: no restauramos selección automáticamente
   await initAuth();
   await subscribe(); // sólo se engancha si el combo está completo
 })();
-
-// === DEBUG: mostrar la ruta de sincronización actual ===
-function canalActual() {
-  const path = `${COLLECTION}/${docId()}`;
-  console.log('[SYNC] Canal:', path);
-  const lbl = document.getElementById('lblEstado');
-  if (lbl) lbl.textContent = `Conectando… (${path})`;
-  return path;
-}
-
-// Llamalo justo antes de suscribirte:
-async function subscribe(){
-  if (!authed) return;
-  if (!comboCompleto()){
-    objetivo = 0; inicioProduccion = null;
-    lastSnap = { parciales:{}, updatedAt:null };
-    render();
-    return;
-  }
-  // 👉 MOSTRAR canal que se va a usar
-  canalActual();
-
-  if (unsubscribe) { unsubscribe(); unsubscribe=null; }
-  // ... (resto igual)
-}
